@@ -1,0 +1,36 @@
+approve_request:
+  name: Approve guest request
+  description: Approve a pending guest Wi-Fi access request.
+  fields:
+    request_id:
+      required: true
+      selector:
+        text:
+    duration_hours:
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 720
+          mode: box
+deny_request:
+  name: Deny guest request
+  description: Deny a pending guest Wi-Fi access request.
+  fields:
+    request_id:
+      required: true
+      selector:
+        text:
+    reason:
+      required: false
+      selector:
+        text:
+revoke_access:
+  name: Revoke guest access
+  description: Revoke an approved guest Wi-Fi access request.
+  fields:
+    request_id:
+      required: true
+      selector:
+        text:
+
