@@ -21,10 +21,13 @@ class PortalOnlineBinarySensor(CoordinatorEntity[OmadaGuestAccessCoordinator], B
 
     _attr_has_entity_name = True
     _attr_name = "Portal online"
-    _attr_unique_id = "omada_guest_access_portal_online"
     _attr_device_class = "connectivity"
+
+    @property
+    def unique_id(self) -> str:
+        """Keep entity identifiers distinct when multiple sites are configured."""
+        return f"omada_guest_access_{self.coordinator.entry.entry_id}_portal_online"
 
     @property
     def is_on(self) -> bool:
         return self.coordinator.last_update_success
-

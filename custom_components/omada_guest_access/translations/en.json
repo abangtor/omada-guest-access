@@ -3,12 +3,34 @@
     "step": {
       "user": {
         "title": "Omada Guest Access",
-        "description": "Connect Home Assistant to an Omada controller and configure the guest portal.",
+        "description": "Connect to Omada's documented External Portal API using a Hotspot Operator account.",
         "data": {
           "controller_url": "Controller URL",
-          "username": "Username",
-          "password": "Password",
+          "controller_id": "Controller ID (optional when included in URL)",
+          "username": "Hotspot Operator username",
+          "password": "Hotspot Operator password",
           "site": "Site",
+          "portal_url": "Public portal URL",
+          "portal_port": "Portal listen port",
+          "verify_ssl": "Verify controller TLS certificate",
+          "default_duration": "Default access duration (hours)",
+          "pending_timeout": "Request expiry (minutes)",
+          "retention_days": "Request history retention (days)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Unable to authenticate with the Omada External Portal API. Confirm the Controller URL/ID and Hotspot Operator credentials."
+    },
+    "abort": {
+      "already_configured": "This Omada controller is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Omada Guest Access options",
+        "data": {
           "portal_url": "Public portal URL",
           "portal_port": "Portal listen port",
           "default_duration": "Default access duration (hours)",
@@ -16,9 +38,6 @@
           "retention_days": "Request history retention (days)"
         }
       }
-    },
-    "abort": {
-      "already_configured": "This Omada controller is already configured."
     }
   }
 }

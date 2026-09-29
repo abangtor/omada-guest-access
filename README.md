@@ -2,46 +2,73 @@
 
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
 
-A Home Assistant custom integration for managing Omada guest Wi-Fi access requests. It provides the Home Assistant foundation for a separate captive portal: guests request access, and an administrator can approve, deny, or revoke it from Home Assistant.
+**Omada Guest Access** is a Home Assistant custom integration and captive portal for approval-based guest Wi-Fi. A guest enters a name on the Omada redirect page; Home Assistant receives an actionable request; approving it authorizes that exact captive-portal session through Omada.
 
-> **Status: alpha.** The request queue, dedicated guest portal, Home Assistant services, events, persistent storage, and request expiry are implemented. Controller-specific authorization is the next compatibility layer; no guest is marked as authorized by Omada until that adapter is configured and verified.
+> **Controller compatibility:** the production authorization path implements TP-Link's documented **External Portal Server API** for Omada Controller **v5.0.15–v6.2.x**. It uses a **Hotspot Operator** account, not a normal Controller administrator account.
 
-## HACS installation
+## Features
 
-1. In HACS, open **Integrations** → the three-dot menu → **Custom repositories**.
-2. Add `https://github.com/abangtor/omada-guest-access` with category **Integration**.
-3. Search for **Omada Guest Access**, download it, and restart Home Assistant.
-4. Go to **Settings → Devices & services → Add integration**, then choose **Omada Guest Access**.
+- Dedicated reverse-proxy-friendly guest portal listener (default `8088`).
+- Omada redirect-context validation for EAP and gateway portals; the browser never submits its own MAC address.
+- Opaque, IP-bound, short-lived portal sessions; status can only be read by the original guest session.
+- Pending queue and active-session sensors with structured dashboard attributes.
+- `approve`, `deny`, and `revoke` services plus lifecycle events for HA automations/notifications.
+- Approval only changes state **after** Omada accepts the controller authorization.
+- Persistent request history, expiry, retention cleanup, rate limiting, and portal request-size limits.
 
-## What works
+## Install with HACS
 
-- A dedicated portal listener (default `8088`) with a mobile-friendly request form and JSON API.
-- Persistent request history via Home Assistant storage, including pending-request expiry.
-- Home Assistant events and services to approve, deny, and revoke requests.
-- Pending and active-session sensors.
+1. In HACS, open **Integrations** → overflow menu → **Custom repositories**.
+2. Add `https://github.com/abangtor/omada-guest-access` as an **Integration** repository.
+3. Install **Omada Guest Access**, restart Home Assistant, then add the integration from **Settings → Devices & services**.
 
-The portal accepts `POST /api/request` and exposes `GET /api/request/{request_id}`. Configure Omada's external portal redirect to include the connected client MAC address and place the portal behind TLS. The guest portal must only be reachable from the guest network/reverse proxy; it is intentionally not an authenticated HA UI.
+## Omada configuration
 
-## Entities
+1. In Omada, create a **Hotspot Operator** for this integration. Do not use an administrator account.
+2. Configure the guest SSID's portal authentication type as **External Portal Server**.
+3. Set its landing URL to your public portal address, for example `https://guest.example.com/`.
+4. Reverse proxy `guest.example.com` to Home Assistant's portal listener (default `8088`) and use TLS.
+5. Allow the guest VLAN to resolve and reach the portal hostname before authentication. Keep Home Assistant's normal UI and the Omada controller off the guest VLAN.
 
-- `sensor.omada_guest_access_pending_requests`
-- `sensor.omada_guest_access_active_sessions`
-- `binary_sensor.omada_guest_access_portal_online`
+For controller-specific settings, use TP-Link's versioned External Portal Server documentation. The integration needs the Controller URL, a Controller ID (normally already present in its URL), the site name, and the Hotspot Operator credentials.
 
-## Current services
+## Home Assistant entities and services
 
-- `omada_guest_access.approve_request`
-- `omada_guest_access.deny_request`
-- `omada_guest_access.revoke_access`
+| Item | Purpose |
+| --- | --- |
+| Pending requests sensor | Count plus `requests` attribute containing request IDs and guest details. |
+| Active sessions sensor | Count plus `sessions` attribute for currently authorized guests. |
+| Portal online binary sensor | Controller/API reachability. |
+| `omada_guest_access.approve_request` | Authorize a request; optional `duration_hours`. |
+| `omada_guest_access.deny_request` | Deny a request; optional guest-visible `reason`. |
+| `omada_guest_access.revoke_access` | Invalidate an active authorization. |
 
-## Planned architecture
+Example approval automation action:
 
-- A dedicated, reverse-proxy-friendly portal listener (default port `8088`).
-- Persistent guest request queue and audit log.
-- Omada controller adapter for direct authorization or voucher issuance.
-- Actionable notifications and dashboard controls.
+```yaml
+service: omada_guest_access.approve_request
+data:
+  request_id: "{{ request_id }}"
+  duration_hours: 8
+```
+
+Events: `omada_guest_access_request_created`, `omada_guest_access_request_approved`, `omada_guest_access_request_denied`, `omada_guest_access_request_expired`, `omada_guest_access_access_revoked`, and `omada_guest_access_omada_api_error`.
+
+## Security and privacy
+
+- The external portal redirect context is supplied by Omada and remains server-side after the landing request.
+- Guest status requests require the opaque, expiring portal session token and are bound to the origin IP.
+- Portal requests are rate-limited and capped at 8 KiB.
+- Request history is retained for the configured period (30 days by default); change it under integration options.
+- Do not expose the controller to the Internet. TLS termination should happen at the reverse proxy; the portal listener itself is HTTP.
+- Omada's redirect protocol has no cryptographic callback signature. Restrict portal ingress to the guest VLAN/reverse proxy and do not expose it as a general public form.
 
 ## Development
 
-Install this repository under `custom_components/omada_guest_access/` in a Home Assistant development environment, then use the config flow to create an entry.
+```bash
+pip install -r requirements_test.txt
+ruff check .
+pytest
+```
 
+The repository's GitHub Actions workflow runs HACS validation, hassfest, Ruff, and tests.

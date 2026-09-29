@@ -13,11 +13,14 @@ CONF_PASSWORD: Final = "password"
 CONF_SITE: Final = "site"
 CONF_PORTAL_URL: Final = "portal_url"
 CONF_PORTAL_PORT: Final = "portal_port"
+CONF_CONTROLLER_ID: Final = "controller_id"
+CONF_VERIFY_SSL: Final = "verify_ssl"
 CONF_DEFAULT_DURATION: Final = "default_duration"
 CONF_PENDING_TIMEOUT: Final = "pending_timeout"
 CONF_RETENTION_DAYS: Final = "retention_days"
 
 DEFAULT_PORTAL_PORT: Final = 8088
+DEFAULT_VERIFY_SSL: Final = True
 DEFAULT_DURATION_HOURS: Final = 8
 DEFAULT_PENDING_TIMEOUT_MINUTES: Final = 15
 DEFAULT_RETENTION_DAYS: Final = 30
@@ -31,8 +34,12 @@ EVENT_REQUEST_APPROVED: Final = f"{DOMAIN}_request_approved"
 EVENT_REQUEST_DENIED: Final = f"{DOMAIN}_request_denied"
 EVENT_ACCESS_REVOKED: Final = f"{DOMAIN}_access_revoked"
 EVENT_REQUEST_EXPIRED: Final = f"{DOMAIN}_request_expired"
+EVENT_OMADA_API_ERROR: Final = f"{DOMAIN}_omada_api_error"
 
 REQUEST_STATUSES: Final = frozenset({"pending", "approved", "denied", "expired", "revoked"})
 STORAGE_VERSION: Final = 1
 STORAGE_KEY: Final = f"{DOMAIN}.requests"
 
+PORTAL_SESSION_TTL_SECONDS: Final = 20 * 60
+PORTAL_RATE_LIMIT: Final = 10
+PORTAL_RATE_WINDOW_SECONDS: Final = 10 * 60

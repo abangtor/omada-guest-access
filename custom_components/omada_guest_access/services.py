@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import voluptuous as vol
-
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import config_validation as cv
 
@@ -16,6 +15,7 @@ from .const import (
     SERVICE_DENY_REQUEST,
     SERVICE_REVOKE_ACCESS,
 )
+from .coordinator import event_data
 
 _REQUEST_ID_SCHEMA = {vol.Required("request_id"): cv.string}
 
@@ -39,23 +39,23 @@ async def async_register_services(hass: HomeAssistant) -> None:
         request = await coordinator_for(call).async_approve_request(
             call.data["request_id"], call.data.get("duration_hours")
         )
-        hass.bus.async_fire(EVENT_REQUEST_APPROVED, dict(request))
+        hass.bus.async_fire(EVENT_REQUEST_APPROVED, event_data(request))
 
     async def deny(call: ServiceCall) -> None:
-        request = await coordinator_for(call).async_deny_request(
-            call.data["request_id"], call.data.get("reason")
-        )
-        hass.bus.async_fire(EVENT_REQUEST_DENIED, dict(request))
+        request = await coordinator_for(call).async_deny_request(call.data["request_id"], call.data.get("reason"))
+        hass.bus.async_fire(EVENT_REQUEST_DENIED, event_data(request))
 
     async def revoke(call: ServiceCall) -> None:
         request = await coordinator_for(call).async_revoke_access(call.data["request_id"])
-        hass.bus.async_fire(EVENT_ACCESS_REVOKED, dict(request))
+        hass.bus.async_fire(EVENT_ACCESS_REVOKED, event_data(request))
 
     hass.services.async_register(
         DOMAIN,
         SERVICE_APPROVE_REQUEST,
         approve,
-        schema=vol.Schema({**_REQUEST_ID_SCHEMA, vol.Optional("duration_hours"): vol.All(vol.Coerce(int), vol.Range(min=1, max=720))}),
+        schema=vol.Schema(
+            {**_REQUEST_ID_SCHEMA, vol.Optional("duration_hours"): vol.All(vol.Coerce(int), vol.Range(min=1, max=720))}
+        ),
     )
     hass.services.async_register(
         DOMAIN,
@@ -64,4 +64,3 @@ async def async_register_services(hass: HomeAssistant) -> None:
         schema=vol.Schema({**_REQUEST_ID_SCHEMA, vol.Optional("reason"): cv.string}),
     )
     hass.services.async_register(DOMAIN, SERVICE_REVOKE_ACCESS, revoke, schema=vol.Schema(_REQUEST_ID_SCHEMA))
-
