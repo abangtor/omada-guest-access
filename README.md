@@ -4,7 +4,7 @@
 
 A Home Assistant custom integration for managing Omada guest Wi-Fi access requests. It provides the Home Assistant foundation for a separate captive portal: guests request access, and an administrator can approve, deny, or revoke it from Home Assistant.
 
-> **Status: scaffold / early development.** The Home Assistant config flow, entities, events, and approval services are in place. Omada API authorization and the standalone captive portal are intentionally not implemented yet.
+> **Status: alpha.** The request queue, dedicated guest portal, Home Assistant services, events, persistent storage, and request expiry are implemented. Controller-specific authorization is the next compatibility layer; no guest is marked as authorized by Omada until that adapter is configured and verified.
 
 ## HACS installation
 
@@ -13,7 +13,16 @@ A Home Assistant custom integration for managing Omada guest Wi-Fi access reques
 3. Search for **Omada Guest Access**, download it, and restart Home Assistant.
 4. Go to **Settings → Devices & services → Add integration**, then choose **Omada Guest Access**.
 
-## Current entities
+## What works
+
+- A dedicated portal listener (default `8088`) with a mobile-friendly request form and JSON API.
+- Persistent request history via Home Assistant storage, including pending-request expiry.
+- Home Assistant events and services to approve, deny, and revoke requests.
+- Pending and active-session sensors.
+
+The portal accepts `POST /api/request` and exposes `GET /api/request/{request_id}`. Configure Omada's external portal redirect to include the connected client MAC address and place the portal behind TLS. The guest portal must only be reachable from the guest network/reverse proxy; it is intentionally not an authenticated HA UI.
+
+## Entities
 
 - `sensor.omada_guest_access_pending_requests`
 - `sensor.omada_guest_access_active_sessions`

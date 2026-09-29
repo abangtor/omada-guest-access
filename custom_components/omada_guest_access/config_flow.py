@@ -12,12 +12,16 @@ from homeassistant.data_entry_flow import FlowResult
 from .const import (
     CONF_CONTROLLER_URL,
     CONF_DEFAULT_DURATION,
+    CONF_PENDING_TIMEOUT,
+    CONF_RETENTION_DAYS,
     CONF_PASSWORD,
     CONF_PORTAL_PORT,
     CONF_PORTAL_URL,
     CONF_SITE,
     CONF_USERNAME,
     DEFAULT_DURATION_HOURS,
+    DEFAULT_PENDING_TIMEOUT_MINUTES,
+    DEFAULT_RETENTION_DAYS,
     DEFAULT_PORTAL_PORT,
     DOMAIN,
 )
@@ -53,6 +57,12 @@ class OmadaGuestAccessConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Required(
                     CONF_DEFAULT_DURATION, default=DEFAULT_DURATION_HOURS
                 ): vol.All(vol.Coerce(int), vol.Range(min=1, max=720)),
+                vol.Required(CONF_PENDING_TIMEOUT, default=DEFAULT_PENDING_TIMEOUT_MINUTES): vol.All(
+                    vol.Coerce(int), vol.Range(min=1, max=1440)
+                ),
+                vol.Required(CONF_RETENTION_DAYS, default=DEFAULT_RETENTION_DAYS): vol.All(
+                    vol.Coerce(int), vol.Range(min=1, max=365)
+                ),
             }
         )
         return self.async_show_form(step_id="user", data_schema=schema)

@@ -11,7 +11,9 @@
           "site": "Site",
           "portal_url": "Public portal URL",
           "portal_port": "Portal listen port",
-          "default_duration": "Default access duration (hours)"
+          "default_duration": "Default access duration (hours)",
+          "pending_timeout": "Request expiry (minutes)",
+          "retention_days": "Request history retention (days)"
         }
       }
     },
