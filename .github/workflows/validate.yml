@@ -24,6 +24,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - run: pip install -r requirements_test.txt
+      - run: pip install --only-binary=bluetooth-data-tools,bluetooth-auto-recovery,dbus-fast -r requirements_test.txt
       - run: ruff check .
       - run: pytest

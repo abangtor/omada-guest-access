@@ -1,66 +1,72 @@
-"""Services for Omada Guest Access."""
+"""Admin-only guest decisions, including trusted HA automation contexts."""
 
 from __future__ import annotations
 
 import voluptuous as vol
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.service import async_register_admin_service
 
-from .const import (
-    DOMAIN,
-    EVENT_ACCESS_REVOKED,
-    EVENT_REQUEST_APPROVED,
-    EVENT_REQUEST_DENIED,
-    SERVICE_APPROVE_REQUEST,
-    SERVICE_DENY_REQUEST,
-    SERVICE_REVOKE_ACCESS,
-)
-from .coordinator import event_data
+from .const import DOMAIN, SERVICE_APPROVE_REQUEST, SERVICE_DENY_REQUEST, SERVICE_REVOKE_ACCESS
 
 _REQUEST_ID_SCHEMA = {vol.Required("request_id"): cv.string}
 
 
 async def async_register_services(hass: HomeAssistant) -> None:
-    """Register services once; route calls to the owning config entry."""
     if hass.services.has_service(DOMAIN, SERVICE_APPROVE_REQUEST):
         return
 
-    def coordinator_for(call: ServiceCall):
-        entries = hass.config_entries.async_entries(DOMAIN)
-        if not entries:
-            raise ValueError("Omada Guest Access is not configured")
-        for entry in entries:
-            coordinator = entry.runtime_data
-            if call.data["request_id"] in coordinator.requests:
-                return coordinator
-        raise ValueError("Unknown guest access request")
-
-    async def approve(call: ServiceCall) -> None:
-        request = await coordinator_for(call).async_approve_request(
-            call.data["request_id"], call.data.get("duration_hours")
+    async def decide(call: ServiceCall) -> None:
+        coordinator = next(
+            (
+                entry.runtime_data
+                for entry in hass.config_entries.async_entries(DOMAIN)
+                if entry.state is ConfigEntryState.LOADED
+                and getattr(entry, "runtime_data", None) is not None
+                and call.data["request_id"] in entry.runtime_data.requests
+            ),
+            None,
         )
-        hass.bus.async_fire(EVENT_REQUEST_APPROVED, event_data(request))
+        if coordinator is None:
+            raise ServiceValidationError("Unknown request or integration is not loaded")
+        try:
+            if call.service == SERVICE_APPROVE_REQUEST:
+                await coordinator.async_approve_request(
+                    call.data["request_id"], call.data.get("duration_hours"), user_id=call.context.user_id
+                )
+            elif call.service == SERVICE_DENY_REQUEST:
+                await coordinator.async_deny_request(
+                    call.data["request_id"], call.data.get("reason"), user_id=call.context.user_id
+                )
+            else:
+                await coordinator.async_revoke_access(call.data["request_id"], user_id=call.context.user_id)
+        except ValueError as err:
+            raise ServiceValidationError(str(err)) from err
 
-    async def deny(call: ServiceCall) -> None:
-        request = await coordinator_for(call).async_deny_request(call.data["request_id"], call.data.get("reason"))
-        hass.bus.async_fire(EVENT_REQUEST_DENIED, event_data(request))
-
-    async def revoke(call: ServiceCall) -> None:
-        request = await coordinator_for(call).async_revoke_access(call.data["request_id"])
-        hass.bus.async_fire(EVENT_ACCESS_REVOKED, event_data(request))
-
-    hass.services.async_register(
+    async_register_admin_service(
+        hass,
         DOMAIN,
         SERVICE_APPROVE_REQUEST,
-        approve,
+        decide,
         schema=vol.Schema(
-            {**_REQUEST_ID_SCHEMA, vol.Optional("duration_hours"): vol.All(vol.Coerce(int), vol.Range(min=1, max=720))}
+            {
+                **_REQUEST_ID_SCHEMA,
+                vol.Optional("duration_hours"): vol.All(vol.Coerce(int), vol.Range(min=1, max=720)),
+            }
         ),
     )
-    hass.services.async_register(
+    async_register_admin_service(
+        hass,
         DOMAIN,
         SERVICE_DENY_REQUEST,
-        deny,
-        schema=vol.Schema({**_REQUEST_ID_SCHEMA, vol.Optional("reason"): cv.string}),
+        decide,
+        schema=vol.Schema(
+            {
+                **_REQUEST_ID_SCHEMA,
+                vol.Optional("reason"): vol.All(cv.string, vol.Length(max=500)),
+            }
+        ),
     )
-    hass.services.async_register(DOMAIN, SERVICE_REVOKE_ACCESS, revoke, schema=vol.Schema(_REQUEST_ID_SCHEMA))
+    async_register_admin_service(hass, DOMAIN, SERVICE_REVOKE_ACCESS, decide, schema=vol.Schema(_REQUEST_ID_SCHEMA))

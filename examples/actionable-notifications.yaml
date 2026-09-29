@@ -1,0 +1,51 @@
+# Add to automations.yaml. Replace the notify service with a trusted admin phone.
+# In Settings -> Companion app, require device unlock for notification actions.
+# Each parallel automation run waits for a response to its own request ID.
+- alias: Omada guest access - request approval
+  id: omada_guest_access_request_approval
+  mode: parallel
+  max: 20
+  triggers:
+    - trigger: event
+      event_type: omada_guest_access_request_created
+  actions:
+    - variables:
+        request_id: "{{ trigger.event.data.request_id }}"
+        approve_action: "{{ 'OMADA_APPROVE_' ~ trigger.event.data.request_id }}"
+        deny_action: "{{ 'OMADA_DENY_' ~ trigger.event.data.request_id }}"
+    - action: notify.mobile_app_admin_phone
+      data:
+        title: Guest Wi-Fi request
+        message: "{{ trigger.event.data.guest_name }} is requesting internet access."
+        data:
+          tag: "{{ request_id }}"
+          actions:
+            - action: "{{ approve_action }}"
+              title: Approve 8h
+              authenticationRequired: true
+            - action: "{{ deny_action }}"
+              title: Deny
+              authenticationRequired: true
+    - wait_for_trigger:
+        - trigger: event
+          event_type: mobile_app_notification_action
+          event_data:
+            action: "{{ approve_action }}"
+        - trigger: event
+          event_type: mobile_app_notification_action
+          event_data:
+            action: "{{ deny_action }}"
+      timeout: "00:15:00"  # match your pending timeout
+      continue_on_timeout: false
+    - choose:
+        - conditions: "{{ wait.trigger.event.data.action == approve_action }}"
+          sequence:
+            - action: omada_guest_access.approve_request
+              data:
+                request_id: "{{ request_id }}"
+                duration_hours: 8
+      default:
+        - action: omada_guest_access.deny_request
+          data:
+            request_id: "{{ request_id }}"
+            reason: Please contact your host.

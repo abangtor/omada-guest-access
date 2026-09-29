@@ -69,7 +69,9 @@ class ActiveSessionsSensor(_BaseSensor):
                 _request_summary(item)
                 for item in self.coordinator.requests.values()
                 if item["status"] == "approved" and item.get("access_expires_at", now) > now
-            ]
+            ],
+            "revoke_supported": self.coordinator.client.supports_revoke,
+            "controller_confirmed": False,
         }
 
 

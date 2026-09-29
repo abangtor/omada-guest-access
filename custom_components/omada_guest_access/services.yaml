@@ -27,7 +27,7 @@ deny_request:
         text:
 revoke_access:
   name: Revoke guest access
-  description: Revoke an approved guest Wi-Fi access request.
+  description: Not supported by the External Portal API. Use Omada Hotspot Manager to end access early; this service reports an error without changing the grant.
   fields:
     request_id:
       required: true

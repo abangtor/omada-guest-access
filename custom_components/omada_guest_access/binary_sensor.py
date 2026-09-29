@@ -13,7 +13,7 @@ from .coordinator import OmadaGuestAccessCoordinator
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
     """Set up Omada guest-access binary sensors."""
-    async_add_entities([PortalOnlineBinarySensor(entry.runtime_data)])
+    async_add_entities([PortalOnlineBinarySensor(entry.runtime_data), ControllerOnlineBinarySensor(entry.runtime_data)])
 
 
 class PortalOnlineBinarySensor(CoordinatorEntity[OmadaGuestAccessCoordinator], BinarySensorEntity):
@@ -30,4 +30,20 @@ class PortalOnlineBinarySensor(CoordinatorEntity[OmadaGuestAccessCoordinator], B
 
     @property
     def is_on(self) -> bool:
-        return self.coordinator.last_update_success
+        return bool(self.coordinator.portal and self.coordinator.portal.running)
+
+
+class ControllerOnlineBinarySensor(CoordinatorEntity[OmadaGuestAccessCoordinator], BinarySensorEntity):
+    """Report controller health separately from the locally running portal."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Controller online"
+    _attr_device_class = "connectivity"
+
+    @property
+    def unique_id(self) -> str:
+        return f"omada_guest_access_{self.coordinator.entry.entry_id}_controller_online"
+
+    @property
+    def is_on(self) -> bool:
+        return self.coordinator.controller_available
