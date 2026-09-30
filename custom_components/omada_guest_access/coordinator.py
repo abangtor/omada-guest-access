@@ -8,6 +8,7 @@ from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import asdict
 from datetime import datetime, timedelta
+from hashlib import sha256
 from typing import Any
 from uuid import uuid4
 
@@ -20,7 +21,9 @@ from homeassistant.util import dt as dt_util
 from .const import (
     CONF_DEFAULT_DURATION,
     CONF_PENDING_TIMEOUT,
+    CONF_REQUIRE_TERMS,
     CONF_RETENTION_DAYS,
+    CONF_TERMS_TEXT,
     DEFAULT_DURATION_HOURS,
     DEFAULT_PENDING_TIMEOUT_MINUTES,
     DEFAULT_RETENTION_DAYS,
@@ -55,6 +58,11 @@ class OmadaGuestAccessCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._stopping = False
         self._lock = asyncio.Lock()
         self._store = Store[dict[str, Any]](hass, STORAGE_VERSION, f"{STORAGE_KEY}.{entry.entry_id}")
+
+    @property
+    def terms_version(self) -> str | None:
+        text = self.config.get(CONF_TERMS_TEXT, "").strip()
+        return sha256(text.encode("utf-8")).hexdigest() if text else None
 
     async def async_load(self) -> None:
         stored = await self._store.async_load() or {}
@@ -131,12 +139,22 @@ class OmadaGuestAccessCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             raise ValueError("Guest access integration is shutting down")
 
     async def async_create_request(
-        self, guest_name: str, context: PortalContext, note: str | None = None
+        self,
+        guest_name: str,
+        context: PortalContext,
+        note: str | None = None,
+        *,
+        terms_accepted: bool = False,
+        terms_version: str | None = None,
     ) -> Mapping[str, Any]:
         if not isinstance(guest_name, str) or not 1 <= len(guest_name.strip()) <= 120:
             raise ValueError("A name of up to 120 characters is required")
         if note is not None and (not isinstance(note, str) or len(note) > 500):
             raise ValueError("Note must be at most 500 characters")
+        terms_text = self.config.get(CONF_TERMS_TEXT, "").strip()
+        required = self.config.get(CONF_REQUIRE_TERMS, False)
+        if required and (terms_accepted is not True or not terms_text or terms_version != self.terms_version):
+            raise ValueError("Accept the current guest Wi-Fi terms before requesting access")
         async with self._lock:
             self._ensure_running()
             await self._expire_locked()
@@ -167,6 +185,9 @@ class OmadaGuestAccessCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "denial_reason": None,
                 "decision_user_id": None,
                 "portal_context": asdict(context),
+                "terms_accepted_at": now if required else None,
+                "terms_version": self.terms_version if required else None,
+                "terms_text": terms_text if required else None,
             }
             self.requests[request_id] = item
             try:
@@ -259,7 +280,7 @@ def _serialize_request(request: Mapping[str, Any]) -> dict[str, Any]:
 
 def _deserialize_request(request: Mapping[str, Any]) -> dict[str, Any]:
     result = dict(request)
-    for key in ("created_at", "updated_at", "expires_at", "access_expires_at"):
+    for key in ("created_at", "updated_at", "expires_at", "access_expires_at", "terms_accepted_at"):
         if isinstance(result.get(key), str):
             parsed = dt_util.parse_datetime(result[key])
             if parsed is None:

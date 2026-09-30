@@ -12,7 +12,9 @@ A Home Assistant custom integration and separate captive portal for approval-bas
 - EAP and gateway redirect parsing, name/note submission, guest-specific status polling.
 - Hotspot Operator login with isolated cookies, CSRF tokens, bounded HTTP timeouts, and one expired-session retry.
 - Admin-only approve/deny services; approval is recorded only after Omada accepts it.
-- Optional Lovelace card with approve/deny buttons, pending requests, and unexpired grants.
+- Optional Lovelace card with approve/deny buttons, pending requests, unexpired grants, and admin-only searchable/paginated history.
+- Configurable portal title, welcome message, accent color, and plain-text terms with optional mandatory acceptance.
+- Server-validated consent with acceptance timestamp, SHA-256 terms version, and the exact accepted text persisted per request.
 - Serialized decisions, persistent requests, decision-user attribution, lifecycle events, expiry and retention.
 - Local cleanup independent of controller availability; active grants survive retention cleanup.
 - Trusted reverse proxies, optional guest-network ingress allowlist, IP-bound tokens, bounded sessions and rate limits.
@@ -23,7 +25,7 @@ A Home Assistant custom integration and separate captive portal for approval-bas
 - **Revocation is not supported by the documented External Portal API.** Earlier code incorrectly assumed that zero-duration authorization revoked access. That behavior has been removed. The retained `revoke_access` service raises an explanatory error and does not alter the grant. End access early in Omada Hotspot Manager, or let the grant expire.
 - The active sensor lists **locally recorded, unexpired grants**, not a controller-confirmed live client list. Manual controller changes are not reconciled. A network timeout during authorization can leave the outcome uncertain; inspect Omada before retrying.
 - Omada redirect query parameters are **unsigned and forgeable**. Opaque tokens protect subsequent status access, but do not authenticate the original MAC/AP context. Guest names are self-reported. Restrict ingress to the guest network and manually review requests; do not automatically approve names or MACs as authenticated identities.
-- Voucher creation, bandwidth profiles, revoke-all, branding/terms/translations, and a browsable audit-history UI are not implemented.
+- Voucher creation, bandwidth profiles, revoke-all, and portal translations are not implemented. History shows retained request records, not an immutable event-by-event audit trail.
 
 ## Install with HACS
 
@@ -62,11 +64,29 @@ ports:
 
 The listener itself serves HTTP. Terminate HTTPS at the proxy; do not proxy guest traffic to HA's authenticated UI. HA's `http.trusted_proxies` setting is separate from this listener's integration options.
 
+## Portal branding and terms
+
+Open the integration's **Configure / Options** dialog:
+
+| Setting | Default / limit |
+| --- | --- |
+| Portal title | `Guest Wi-Fi`; nonblank, up to 80 characters |
+| Welcome message | `Request internet access from your host.`; up to 500 characters |
+| Accent color | `#1769aa`; six-digit `#RRGGBB` |
+| Guest Wi-Fi terms | Empty; up to 4,000 characters, multiline plain text |
+| Require acceptance | Off; requires nonblank terms when enabled |
+
+Text is escaped, never rendered as HTML. Everything is served locally: no external fonts, images, or scripts are needed before authorization. Choose an accent with sufficient contrast against white button text.
+
+When acceptance is required, both the browser form and server enforce it before creating a request. The server records its own timestamp, the SHA-256 hash of the displayed terms (UTF-8, outer whitespace trimmed), and a snapshot of that text. Browser-supplied timestamps, hashes, and terms text are ignored. Informational terms without mandatory acceptance do **not** create a consent record.
+
+Saving options reloads the listener: guests with an open page should reconnect. Changes apply to new requests; existing requests retain their original consent (or lack of consent). They are not silently re-consented or automatically revoked. This is a self-reported acceptance record, not verification of a guest's legal identity.
+
 ## Request-management dashboard card
 
 The integration serves the bundled card through **HA's normal HTTP interface**, not the guest listener.
 
-1. Settings → Dashboards → Resources (Advanced Mode): add `/omada_guest_access/omada-guest-access-card.js?v=1.1.0` as a **JavaScript module**.
+1. Settings → Dashboards → Resources (Advanced Mode): add `/omada_guest_access/omada-guest-access-card.js?v=1.2.0` as a **JavaScript module**.
 2. Add a Manual card using your actual sensor entity IDs:
 
 ```yaml
@@ -78,6 +98,20 @@ title: Guest Wi-Fi
 ```
 
 Entity IDs may have suffixes if multiple sites/integrations are installed. Find them under the integration's entities. Only administrators see enabled approval controls. Errors are displayed in the card; grants show their scheduled expiry and the revocation limitation.
+
+### Request history
+
+Administrators can select **Show history**, filter by status, or search by name, MAC address, or request ID. Pages contain 20 requests, newest first. **Request details** shows timestamps, denial reason, the HA decision user ID, and any recorded terms acceptance and text. Use **Search / refresh** for fresh data; history is a snapshot and is not streamed. New requests or retention cleanup between page loads can shift page boundaries.
+
+The card obtains the integration entry ID from the pending sensor. History uses HA's authenticated WebSocket command `omada_guest_access/history`, with server-side admin checks; it is never exposed on the guest port or added to sensor attributes. Requests for missing, unloaded, or unrelated entries are rejected. Automation decisions and older records can lack a user ID. This is a browsable current/final-state record, not an append-only controller audit log.
+
+Example command for an authenticated HA administrator:
+
+```json
+{"id": 1, "type": "omada_guest_access/history", "entry_id": "YOUR_ENTRY_ID", "status": "denied", "query": "Alex", "offset": 0, "limit": 20}
+```
+
+Omit `status` for all statuses. `query` is case-insensitive (maximum 120 characters), `offset` is zero-based, and `limit` is 1–50. The result contains `requests`, `total`, `offset`, and `limit`. Controller credentials and internal redirect/session context are never returned.
 
 ## Entities and services
 
@@ -99,7 +133,7 @@ See [examples/actionable-notifications.yaml](examples/actionable-notifications.y
 
 ## Persistence and privacy
 
-Requests and decisions use HA `.storage`; normal history retention defaults to 30 days after the last state change. Unexpired grants are never removed by retention. Pending deadlines continue to be enforced during controller outages, and stale approvals are rejected immediately. Portal browser tokens are deliberately memory-only: reconnect after an HA restart to obtain a new session. A long configured pending timeout extends the token lifetime accordingly.
+Requests, decisions, and any consent snapshots use HA `.storage`; normal history retention defaults to 30 days after the last state change. Unexpired grants are never removed by retention. Pending deadlines continue to be enforced during controller outages, and stale approvals are rejected immediately. Portal browser tokens are deliberately memory-only: reconnect after an HA restart to obtain a new session. A long configured pending timeout extends the token lifetime accordingly.
 
 HA config-entry credentials are stored in HA's configuration storage, **not guaranteed to be encrypted**. Protect configuration files and backups. Sensor attributes contain guest names, notes and MAC addresses. HA Recorder/backups have separate retention policies; exclude these sensors from Recorder if needed:
 
@@ -112,6 +146,14 @@ recorder:
 ```
 
 Guest responses exclude other guests, internal controller context and credentials. Guest pages/status/errors use `Cache-Control: no-store`; the portal disables its own access log. Configure reverse-proxy logging accordingly: the initial query contains MAC addresses and connection details.
+
+## Upgrade notes for 1.2.0
+
+- Update through HACS and restart HA. Update the card resource URL to `?v=1.2.0` and refresh the dashboard.
+- Existing configuration and request history remain compatible; no new credentials are required.
+- Branding retains the previous defaults. Terms acceptance is off until configured explicitly.
+- Legacy records show “Terms acceptance was not recorded”; no consent is fabricated for them.
+- Consent snapshots share the request's retention policy; backups have their own retention. Only administrators can use the new history API.
 
 ## Upgrade notes for 1.1.0
 
@@ -143,4 +185,4 @@ Before production, check your specific controller and guest devices:
 5. iOS/Android captive-portal browser behavior and proxy/VLAN reachability.
 6. End access manually in Omada and confirm traffic stops. The local grant remains until its recorded deadline, because this adapter cannot reconcile controller state.
 
-GitHub Actions runs HACS validation, hassfest, Ruff and the Python test suite.
+GitHub Actions runs HACS validation, hassfest, Ruff, the Python test suite, and the Chromium browser smoke test (mocked HA/controller traffic).

@@ -134,3 +134,70 @@ async def test_real_listener_releases_socket_for_reload(hass, coordinator, socke
         assert replacement.running
     finally:
         await replacement.async_stop()
+
+
+@pytest.mark.parametrize("accepted", [None, False, "true", 1, [], {}])
+async def test_required_terms_cannot_be_bypassed(hass, coordinator, aiohttp_client, socket_enabled, accepted):
+    coordinator.config.update(require_terms=True, terms_text="No illegal activity.")
+    client = await aiohttp_client(GuestPortal(hass, coordinator, 0).create_app())
+    headers = await landing(client)
+    response = await client.post(
+        "/api/request", headers=headers, json={"guest_name": "Alex", "terms_accepted": accepted}
+    )
+    assert response.status == 409
+    assert not coordinator.requests
+
+
+async def test_consent_snapshot_comes_from_server(hass, coordinator, aiohttp_client, socket_enabled):
+    coordinator.config.update(require_terms=True, terms_text="Be kind.\nNo abuse.")
+    client = await aiohttp_client(GuestPortal(hass, coordinator, 0).create_app())
+    headers = await landing(client)
+    response = await client.post(
+        "/api/request",
+        headers=headers,
+        json={
+            "guest_name": "Alex",
+            "terms_accepted": True,
+            "terms_version": "forged",
+            "terms_accepted_at": "fake",
+        },
+    )
+    assert response.status == 201
+    public = await response.json()
+    record = coordinator.requests[public["request_id"]]
+    assert record["terms_version"] == coordinator.terms_version
+    assert record["terms_text"] == "Be kind.\nNo abuse."
+    assert record["terms_accepted_at"].tzinfo is not None
+    assert "terms_text" not in public
+    # Even an idempotent submission cannot overwrite the original evidence.
+    response = await client.post("/api/request", headers=headers, json={"guest_name": "Other"})
+    assert response.status == 200
+    assert coordinator.requests[public["request_id"]] == record
+
+
+async def test_terms_changed_since_landing_requires_new_session(hass, coordinator, aiohttp_client, socket_enabled):
+    coordinator.config.update(require_terms=True, terms_text="Original terms")
+    client = await aiohttp_client(GuestPortal(hass, coordinator, 0).create_app())
+    headers = await landing(client)
+    coordinator.config["terms_text"] = "Changed terms"
+    response = await client.post("/api/request", headers=headers, json={"guest_name": "Alex", "terms_accepted": True})
+    assert response.status == 409
+    assert not coordinator.requests
+
+
+async def test_custom_portal_text_is_escaped_and_no_terms_by_default(hass, coordinator, aiohttp_client, socket_enabled):
+    coordinator.config.update(
+        portal_title="Sam's <Guest> Wi-Fi",
+        portal_message="<script>alert(1)</script>",
+        portal_accent="#123ABC",
+        terms_text="<img src=x onerror=alert(1)> $title",
+    )
+    client = await aiohttp_client(GuestPortal(hass, coordinator, 0).create_app())
+    response = await client.get("/", params=QUERY)
+    text = await response.text()
+    assert "Sam&#x27;s &lt;Guest&gt; Wi-Fi" in text
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in text
+    assert "&lt;img src=x onerror=alert(1)&gt; $title" in text
+    assert "background:#123ABC" in text
+    assert "type='checkbox'" not in text
+    assert "<script>alert" not in text

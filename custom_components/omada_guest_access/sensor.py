@@ -41,6 +41,7 @@ class PendingRequestsSensor(_BaseSensor):
     def extra_state_attributes(self) -> dict[str, list[dict[str, str | None]]]:
         """Expose the actionable pending queue for dashboard templates/cards."""
         return {
+            "entry_id": self.coordinator.entry.entry_id,
             "requests": [
                 _request_summary(item) for item in self.coordinator.requests.values() if item["status"] == "pending"
             ]

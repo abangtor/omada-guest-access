@@ -6,7 +6,9 @@ import json
 import re
 from collections import defaultdict, deque
 from datetime import timedelta
+from html import escape
 from ipaddress import ip_address, ip_network
+from string import Template
 from typing import Any
 from urllib.parse import urlsplit
 from uuid import uuid4
@@ -18,10 +20,18 @@ from homeassistant.util import dt as dt_util
 from .const import (
     CONF_ALLOWED_NETWORKS,
     CONF_PENDING_TIMEOUT,
+    CONF_PORTAL_ACCENT,
+    CONF_PORTAL_MESSAGE,
+    CONF_PORTAL_TITLE,
     CONF_PORTAL_URL,
+    CONF_REQUIRE_TERMS,
     CONF_SITE,
+    CONF_TERMS_TEXT,
     CONF_TRUSTED_PROXIES,
     DEFAULT_PENDING_TIMEOUT_MINUTES,
+    DEFAULT_PORTAL_ACCENT,
+    DEFAULT_PORTAL_MESSAGE,
+    DEFAULT_PORTAL_TITLE,
     PORTAL_MAX_SESSIONS,
     PORTAL_RATE_LIMIT,
     PORTAL_RATE_WINDOW_SECONDS,
@@ -102,6 +112,7 @@ class GuestPortal:
         session_id = uuid4().hex
         self._sessions[session_id] = {
             "context": context,
+            "terms_version": self.coordinator.terms_version,
             "ip": self._client_ip(request),
             "expires_at": dt_util.utcnow()
             + timedelta(
@@ -113,7 +124,7 @@ class GuestPortal:
             "request_id": None,
         }
         return web.Response(
-            text=_page(session_id),
+            text=_page(session_id, self.coordinator.config),
             content_type="text/html",
             headers={
                 "Content-Security-Policy": f"default-src 'none'; script-src 'nonce-{session_id}'; "
@@ -148,7 +159,13 @@ class GuestPortal:
                 text="A name of up to 120 characters and an optional 500-character note are required"
             )
         try:
-            result = await self.coordinator.async_create_request(name, session["context"], note)
+            result = await self.coordinator.async_create_request(
+                name,
+                session["context"],
+                note,
+                terms_accepted=body.get("terms_accepted") is True,
+                terms_version=session["terms_version"],
+            )
         except ValueError as err:
             raise web.HTTPConflict(text=str(err)) from err
         session["request_id"] = result["request_id"]
@@ -278,15 +295,47 @@ def parse_networks(value: str) -> list:
     return [ip_network(part.strip(), strict=False) for part in value.split(",") if part.strip()]
 
 
-def _page(session_id: str) -> str:
-    return _PAGE.replace("__TOKEN__", json.dumps(session_id)).replace("__NONCE__", session_id)
+def _page(session_id: str, config: dict[str, Any] | None = None) -> str:
+    config = config or {}
+    terms = config.get(CONF_TERMS_TEXT, "").strip()
+    terms_html = ""
+    if terms:
+        terms_html = (
+            "<details id='terms' open><summary>Guest Wi-Fi terms</summary><p>" + escape(terms) + "</p></details>"
+        )
+    if config.get(CONF_REQUIRE_TERMS):
+        terms_html += "<label class='consent'><input type='checkbox' name='terms_accepted' required> I agree to the guest Wi-Fi terms.</label>"
+    accent = config.get(CONF_PORTAL_ACCENT, DEFAULT_PORTAL_ACCENT)
+    if not re.fullmatch(r"#[0-9a-fA-F]{6}", accent):
+        accent = DEFAULT_PORTAL_ACCENT
+    return Template(_PAGE).substitute(
+        token=json.dumps(session_id),
+        nonce=escape(session_id, quote=True),
+        title=escape(config.get(CONF_PORTAL_TITLE, DEFAULT_PORTAL_TITLE)),
+        message=escape(config.get(CONF_PORTAL_MESSAGE, DEFAULT_PORTAL_MESSAGE)),
+        accent=accent,
+        terms=terms_html,
+    )
 
 
-_PAGE = """<!doctype html><html lang='en'><meta name='viewport' content='width=device-width,initial-scale=1'>
-<title>Guest Wi-Fi</title><style>body{font-family:system-ui;max-width:440px;margin:12vh auto;padding:1rem;color:#15202b}input,button{box-sizing:border-box;width:100%;padding:.8rem;margin:.4rem 0}button{background:#1769aa;color:#fff;border:0;border-radius:.3rem;font:inherit}#status{margin-top:1rem}small{color:#52606d}</style>
-<h1>Guest Wi-Fi</h1><p>Request internet access from your host.</p><form id='request'><label>Your name<input name='guest_name' required maxlength='120' autocomplete='name'></label><label>Optional note<input name='note' maxlength='500'></label><button>Request access</button></form><p id='status' role='status'></p><script nonce='__NONCE__'>
-const token=__TOKEN__,f=document.querySelector('form'),s=document.querySelector('#status');let id,timer;
+_PAGE = """<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
+<title>$title</title><style>
+body{font-family:system-ui;max-width:440px;margin:8vh auto;padding:1rem;color:#15202b;background:#fff}
+input,button{box-sizing:border-box;width:100%;padding:.8rem;margin:.4rem 0}
+button{background:$accent;color:#fff;border:0;border-radius:.3rem;font:inherit;cursor:pointer}
+button:disabled{opacity:.6;cursor:wait}input[type=checkbox]{width:auto;margin-right:.5rem}
+#status{margin-top:1rem}#terms{margin:1rem 0}p{white-space:pre-wrap;overflow-wrap:anywhere}
+.consent{display:block;margin:1rem 0}small{color:#52606d}
+</style></head><body>
+<h1>$title</h1><p>$message</p><form id='request'>
+<label>Your name<input name='guest_name' required maxlength='120' autocomplete='name'></label>
+<label>Optional note<input name='note' maxlength='500'></label>$terms
+<button>Request access</button></form><p id='status' role='status' aria-live='polite'></p><script nonce='$nonce'>
+const token=$token,f=document.querySelector('form'),s=document.querySelector('#status');let id,timer;
 async function api(path,opts={}){let r=await fetch(path,{...opts,headers:{'Content-Type':'application/json','X-Portal-Token':token,...(opts.headers||{})}});if(!r.ok)throw new Error();return r.json()}
 async function poll(){try{let x=await api('/api/request/'+id);if(x.status==='pending')return;clearInterval(timer);if(x.status==='approved'){s.textContent='Access approved. You can now use the internet.';if(x.redirect_url)location.assign(x.redirect_url)}else if(x.status==='denied')s.textContent=x.denial_reason||'Access was denied.';else s.textContent='This request has expired.'}catch(_){clearInterval(timer);s.textContent='Your portal session expired. Please reconnect to Guest Wi-Fi.'}}
-f.onsubmit=async e=>{e.preventDefault();try{let x=await api('/api/request',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(f)))});id=x.request_id;f.hidden=true;s.textContent='Request sent. Waiting for approval…';timer=setInterval(poll,3000);await poll()}catch(_){s.textContent='Unable to send your request. Please reconnect and try again.'}};
-</script></html>"""
+f.onsubmit=async e=>{e.preventDefault();const button=f.querySelector('button');button.disabled=true;
+try{const body=Object.fromEntries(new FormData(f));if(f.elements.terms_accepted)body.terms_accepted=f.elements.terms_accepted.checked;
+let x=await api('/api/request',{method:'POST',body:JSON.stringify(body)});id=x.request_id;f.hidden=true;s.textContent='Request sent. Waiting for approval…';timer=setInterval(poll,3000);await poll()}
+catch(_){s.textContent='Unable to send your request. Please reconnect and try again.'}finally{button.disabled=false}};
+</script></body></html>"""

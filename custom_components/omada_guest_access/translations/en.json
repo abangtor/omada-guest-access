@@ -17,7 +17,12 @@
           "pending_timeout": "Request expiry (minutes)",
           "retention_days": "Request history retention (days)",
           "trusted_proxies": "Trusted proxy IPs/CIDRs (comma-separated)",
-          "allowed_networks": "Allowed guest IPs/CIDRs (empty: unrestricted)"
+          "allowed_networks": "Allowed guest IPs/CIDRs (empty: unrestricted)",
+          "portal_title": "Portal title",
+          "portal_message": "Welcome message (plain text)",
+          "portal_accent": "Accent color (#RRGGBB)",
+          "terms_text": "Guest Wi-Fi terms (plain text)",
+          "require_terms": "Require acceptance of guest Wi-Fi terms"
         }
       },
       "reauth_confirm": {
@@ -36,7 +41,12 @@
           "pending_timeout": "Request expiry (minutes)",
           "retention_days": "Request history retention (days)",
           "trusted_proxies": "Trusted proxy IPs/CIDRs (comma-separated)",
-          "allowed_networks": "Allowed guest IPs/CIDRs (empty: unrestricted)"
+          "allowed_networks": "Allowed guest IPs/CIDRs (empty: unrestricted)",
+          "portal_title": "Portal title",
+          "portal_message": "Welcome message (plain text)",
+          "portal_accent": "Accent color (#RRGGBB)",
+          "terms_text": "Guest Wi-Fi terms (plain text)",
+          "require_terms": "Require acceptance of guest Wi-Fi terms"
         }
       },
       "reconfigure": {
@@ -55,14 +65,19 @@
           "pending_timeout": "Request expiry (minutes)",
           "retention_days": "Request history retention (days)",
           "trusted_proxies": "Trusted proxy IPs/CIDRs (comma-separated)",
-          "allowed_networks": "Allowed guest IPs/CIDRs (empty: unrestricted)"
+          "allowed_networks": "Allowed guest IPs/CIDRs (empty: unrestricted)",
+          "portal_title": "Portal title",
+          "portal_message": "Welcome message (plain text)",
+          "portal_accent": "Accent color (#RRGGBB)",
+          "terms_text": "Guest Wi-Fi terms (plain text)",
+          "require_terms": "Require acceptance of guest Wi-Fi terms"
         }
       }
     },
     "error": {
       "cannot_connect": "Unable to authenticate with the Omada External Portal API. Confirm the Controller URL/ID and Hotspot Operator credentials.",
       "invalid_auth": "Hotspot Operator credentials were rejected.",
-      "invalid_config": "Check controller URL/ID, portal origin URL, and IP/CIDR settings.",
+      "invalid_config": "Check controller URL/ID, portal origin, IP/CIDR settings, and portal text. Accent must be #RRGGBB; required terms must not be blank. Title/message/terms limits: 80/500/4000 characters.",
       "port_in_use": "Another Omada Guest Access entry uses this port."
     },
     "abort": {
@@ -82,12 +97,17 @@
           "pending_timeout": "Request expiry (minutes)",
           "retention_days": "Request history retention (days)",
           "trusted_proxies": "Trusted proxy IPs/CIDRs (comma-separated)",
-          "allowed_networks": "Allowed guest IPs/CIDRs (empty: unrestricted)"
+          "allowed_networks": "Allowed guest IPs/CIDRs (empty: unrestricted)",
+          "portal_title": "Portal title",
+          "portal_message": "Welcome message (plain text)",
+          "portal_accent": "Accent color (#RRGGBB)",
+          "terms_text": "Guest Wi-Fi terms (plain text)",
+          "require_terms": "Require acceptance of guest Wi-Fi terms"
         }
       }
     },
     "error": {
-      "invalid_config": "Check controller URL/ID, portal origin URL, and IP/CIDR settings.",
+      "invalid_config": "Check controller URL/ID, portal origin, IP/CIDR settings, and portal text. Accent must be #RRGGBB; required terms must not be blank. Title/message/terms limits: 80/500/4000 characters.",
       "port_in_use": "Another Omada Guest Access entry uses this port."
     }
   }

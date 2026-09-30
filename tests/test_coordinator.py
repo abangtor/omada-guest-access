@@ -136,3 +136,33 @@ async def test_invalid_duration_rejected_before_network(coordinator, context, du
     with pytest.raises(ValueError):
         await coordinator.async_approve_request(item["request_id"], duration)
     coordinator.client.async_authorize.assert_not_called()
+
+
+async def test_consent_persists_without_retroactive_policy_changes(hass, coordinator, context):
+    coordinator.config.update(require_terms=True, terms_text="Original terms")
+    with pytest.raises(ValueError, match="Accept"):
+        await coordinator.async_create_request("Alex", context)
+    item = await coordinator.async_create_request(
+        "Alex", context, terms_accepted=True, terms_version=coordinator.terms_version
+    )
+    coordinator.config["terms_text"] = "New terms"
+    # New policy is not retroactively attributed to a pending request.
+    await coordinator.async_approve_request(item["request_id"], user_id="admin")
+    restored = OmadaGuestAccessCoordinator(hass, coordinator.entry)
+    try:
+        await restored.async_load()
+        record = restored.requests[item["request_id"]]
+        assert record["terms_text"] == "Original terms"
+        assert record["terms_version"] == item["terms_version"]
+        assert record["terms_accepted_at"] == item["terms_accepted_at"]
+    finally:
+        await restored.async_close()
+
+
+async def test_optional_terms_do_not_record_fabricated_consent(coordinator, context):
+    coordinator.config.update(require_terms=False, terms_text="Informational notice")
+    item = await coordinator.async_create_request(
+        "Alex", context, terms_accepted=True, terms_version=coordinator.terms_version
+    )
+    assert item["terms_accepted_at"] is None
+    assert item["terms_text"] is None

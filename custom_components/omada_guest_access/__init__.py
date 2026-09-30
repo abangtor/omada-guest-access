@@ -16,6 +16,7 @@ from .frontend import async_register_frontend
 from .omada_client import OmadaApiError, OmadaAuthError, normalize_controller_url
 from .portal import GuestPortal
 from .services import async_register_services
+from .websocket import async_register_history
 
 type OmadaGuestAccessConfigEntry = ConfigEntry[OmadaGuestAccessCoordinator]
 
@@ -38,6 +39,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: OmadaGuestAccessConfigEn
         entry.runtime_data = coordinator
         await async_register_frontend(hass)
         await async_register_services(hass)
+        async_register_history(hass)
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     except BaseException as err:
         if portal is not None:

@@ -110,3 +110,46 @@ async def test_reauth_updates_and_reloads(hass, entry, config, flow_client):
     assert result["reason"] == "reauth_successful"
     assert entry.data["password"] == "replacement-password"
     reload.assert_awaited_once()
+
+
+@pytest.mark.parametrize(
+    "settings",
+    [
+        {"require_terms": True, "terms_text": " "},
+        {"portal_accent": "red; background:url(https://example.com)"},
+        {"portal_title": " "},
+        {"portal_message": "x" * 501},
+        {"terms_text": "x" * 4001},
+    ],
+)
+async def test_options_reject_invalid_portal_branding(hass, entry, settings):
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input={
+            "portal_port": 8088,
+            "default_duration": 8,
+            "pending_timeout": 15,
+            "retention_days": 30,
+            **settings,
+        },
+    )
+    assert result["errors"] == {"base": "invalid_config"}
+
+
+async def test_options_store_branding_and_terms(hass, entry):
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    settings = {
+        "portal_port": 8088,
+        "default_duration": 8,
+        "pending_timeout": 15,
+        "retention_days": 30,
+        "portal_title": "Garden Wi-Fi",
+        "portal_message": "Welcome!",
+        "portal_accent": "#ABC123",
+        "terms_text": "No abuse.\nEnjoy your visit.",
+        "require_terms": True,
+    }
+    result = await hass.config_entries.options.async_configure(result["flow_id"], user_input=settings)
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert all(entry.options[key] == value for key, value in settings.items())

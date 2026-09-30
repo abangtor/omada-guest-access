@@ -27,3 +27,7 @@ jobs:
       - run: pip install --only-binary=bluetooth-data-tools,bluetooth-auto-recovery,dbus-fast -r requirements_test.txt
       - run: ruff check .
       - run: pytest
+      - run: python -m playwright install --with-deps chromium
+      - run: python tests/browser_smoke.py
+        env:
+          PYTHONPATH: .

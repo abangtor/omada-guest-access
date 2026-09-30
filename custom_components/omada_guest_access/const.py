@@ -48,3 +48,12 @@ CONF_TRUSTED_PROXIES: Final = "trusted_proxies"
 CONF_ALLOWED_NETWORKS: Final = "allowed_networks"
 PORTAL_MAX_SESSIONS: Final = 2000
 PORTAL_MAX_PENDING: Final = 500
+
+CONF_PORTAL_TITLE: Final = "portal_title"
+CONF_PORTAL_MESSAGE: Final = "portal_message"
+CONF_PORTAL_ACCENT: Final = "portal_accent"
+CONF_TERMS_TEXT: Final = "terms_text"
+CONF_REQUIRE_TERMS: Final = "require_terms"
+DEFAULT_PORTAL_TITLE: Final = "Guest Wi-Fi"
+DEFAULT_PORTAL_MESSAGE: Final = "Request internet access from your host."
+DEFAULT_PORTAL_ACCENT: Final = "#1769aa"
