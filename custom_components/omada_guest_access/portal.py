@@ -136,7 +136,15 @@ class GuestPortal:
                 ),
                 "request_id": None,
             }
-        if session["request_id"] not in self.coordinator.requests:
+        request_id = session["request_id"]
+        item = self.coordinator.requests.get(request_id) if request_id else None
+        if item is None:
+            session["request_id"] = None
+        elif item["status"] == "revoked":
+            # Cancellation ends the old authorization.  A device which is
+            # redirected to the portal again needs a new request, rather than
+            # being permanently tied to the cancelled request by its portal
+            # session cookie.
             session["request_id"] = None
         try:
             page = await self.hass.async_add_executor_job(

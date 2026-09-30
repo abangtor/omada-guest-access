@@ -245,6 +245,31 @@ async def test_reload_restores_request_without_duplicate(
     assert len(coordinator.requests) == 1
 
 
+async def test_reconnect_after_revocation_shows_a_new_request_form(
+    hass, coordinator, aiohttp_client, socket_enabled
+):
+    """A cancelled guest must be able to create a fresh access request."""
+    portal = GuestPortal(hass, coordinator, 0)
+    client = await aiohttp_client(portal.create_app())
+    headers = await landing(client)
+    response = await client.post("/api/request", headers=headers, json={"guest_name": "Alex"})
+    request_id = (await response.json())["request_id"]
+    # The controller call itself is covered in test_revoke; this isolates the
+    # portal's handling of the resulting local lifecycle state.
+    coordinator.requests[request_id]["status"] = "revoked"
+
+    response = await client.get(
+        "/",
+        params=QUERY,
+        headers={"Cookie": f"omada_guest_portal={headers['X-Portal-Token']}"},
+    )
+    assert response.status == 200
+    page = await response.text()
+    assert "let id=null" in page
+    assert "<form id='request' hidden>" not in page
+    assert portal._sessions[headers["X-Portal-Token"]]["request_id"] is None
+
+
 async def test_cookie_cannot_recover_other_ip_or_device(hass, coordinator, aiohttp_client, socket_enabled):
     coordinator.config.update(trusted_proxies="127.0.0.1")
     portal = GuestPortal(hass, coordinator, 0)
