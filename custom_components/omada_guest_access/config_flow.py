@@ -40,7 +40,13 @@ from .const import (
     DEFAULT_VERIFY_SSL,
     DOMAIN,
 )
-from .omada_client import OmadaApiError, OmadaAuthError, OmadaExternalPortalClient, normalize_controller_url
+from .omada_client import (
+    OmadaApiError,
+    OmadaAuthError,
+    OmadaExternalPortalClient,
+    OmadaTlsError,
+    normalize_controller_url,
+)
 from .portal import _safe_redirect_url, parse_networks
 
 
@@ -79,6 +85,8 @@ class OmadaGuestAccessConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     await client.async_test_connection()
             except OmadaAuthError:
                 errors["base"] = "invalid_auth"
+            except OmadaTlsError:
+                errors["base"] = "tls_error"
             except OmadaApiError:
                 errors["base"] = "cannot_connect"
             except ValueError:

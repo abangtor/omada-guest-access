@@ -217,3 +217,17 @@ async def test_auth_error_form_loads_over_http(flow_http, config, flow_client):
     response = await flow_http.post(f"/api/config/config_entries/flow/{flow_id}", json=config)
     assert response.status == 200
     assert (await response.json())["errors"] == {"base": "invalid_auth"}
+
+
+@pytest.mark.parametrize('kind,expected', [('tls', 'tls_error'), ('network', 'cannot_connect')])
+async def test_connection_errors_are_not_reported_as_bad_credentials(hass, config, flow_client, kind, expected):
+    from custom_components.omada_guest_access.omada_client import OmadaApiError, OmadaTlsError
+
+    error_type = OmadaTlsError if kind == 'tls' else OmadaApiError
+    flow_client.async_test_connection.side_effect = error_type('connection failed')
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={'source': config_entries.SOURCE_USER}, data=config
+    )
+    assert result['type'] is FlowResultType.FORM
+    assert result['errors'] == {'base': expected}
+    flow_client.async_close.assert_awaited_once()

@@ -118,3 +118,23 @@ async def test_timeout_is_sanitized(hass, config):
             assert "secret-data" not in str(error.value)
     finally:
         await client.async_close()
+
+
+async def test_certificate_failure_is_distinct_and_sanitized(hass, config):
+    import ssl
+
+    from aiohttp import ClientConnectorCertificateError
+    from aiohttp.client_reqrep import ConnectionKey
+
+    from custom_components.omada_guest_access.omada_client import OmadaTlsError
+
+    key = ConnectionKey('controller.example', 443, True, True, None, None, None)
+    failure = ClientConnectorCertificateError(key, ssl.CertificateError('private certificate detail'))
+    client = OmadaExternalPortalClient(hass, config)
+    try:
+        with patch.object(client._session, 'post', side_effect=failure):
+            with pytest.raises(OmadaTlsError, match='verified TLS connection') as error:
+                await client.async_test_connection()
+            assert 'private certificate detail' not in str(error.value)
+    finally:
+        await client.async_close()

@@ -147,6 +147,12 @@ recorder:
 
 Guest responses exclude other guests, internal controller context and credentials. Guest pages/status/errors use `Cache-Control: no-store`; the portal disables its own access log. Configure reverse-proxy logging accordingly: the initial query contains MAC addresses and connection details.
 
+## Upgrade notes for 1.2.2
+
+- Setup now distinguishes controller TLS failures from network/API failures and rejected credentials.
+- For a trusted local controller with a self-signed certificate, uncheck **Verify controller TLS certificate** in the integration form. This keeps HTTPS encryption but disables certificate verification for this integration only. Prefer a trusted certificate and matching hostname when available.
+- The workaround also works in earlier versions; no update is required to change this setting. Update/redownload from HACS and restart HA to receive the clearer errors.
+
 ## Upgrade notes for 1.2.1
 
 - Fixes the setup/reconfigure/reauthentication form returning “Config flow could not be loaded: 500 Internal Server Error”.

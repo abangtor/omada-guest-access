@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
-from aiohttp import ClientError, ClientSession, ClientTimeout, CookieJar
+from aiohttp import ClientError, ClientSession, ClientSSLError, ClientTimeout, CookieJar
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
 from homeassistant.util import dt as dt_util
@@ -23,6 +23,10 @@ from .const import CONF_CONTROLLER_ID, CONF_CONTROLLER_URL, CONF_PASSWORD, CONF_
 
 class OmadaApiError(Exception):
     """The controller could not complete a request."""
+
+
+class OmadaTlsError(OmadaApiError):
+    """The controller TLS certificate or handshake could not be verified."""
 
 
 class OmadaAuthError(OmadaApiError):
@@ -147,6 +151,8 @@ class OmadaExternalPortalClient:
                     result = await response.json(content_type=None)
                 except ValueError as err:
                     raise OmadaApiError("Omada returned invalid JSON") from err
+        except ClientSSLError as err:
+            raise OmadaTlsError("Unable to establish a verified TLS connection to the Omada controller") from err
         except (ClientError, TimeoutError) as err:
             raise OmadaApiError("Unable to reach Omada controller (network error or timeout)") from err
         if not isinstance(result, dict) or "errorCode" not in result:
