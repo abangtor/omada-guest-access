@@ -14,6 +14,7 @@ import asyncio
 from pathlib import Path
 
 from browser_card import check_card
+from browser_memory import check_guest_memory
 from playwright.async_api import async_playwright
 
 from custom_components.omada_guest_access.portal import _page
@@ -111,7 +112,7 @@ async def main(executable: str | None) -> None:
                     assert request_route.request.headers["x-portal-token"] == "testtoken"
                     await request_route.fulfill(json={"request_id": "guest1", "status": "pending"})
                 elif path.endswith("/api/request/guest1"):
-                    await request_route.fulfill(json={"request_id": "guest1", "status": guest_status})
+                    await request_route.fulfill(json={"request_id": "guest1", "status": guest_status, "redirect_url": "http://neverssl.example/"})
                 else:
                     await request_route.fulfill(
                         content_type="text/html",
@@ -119,8 +120,6 @@ async def main(executable: str | None) -> None:
                             "testtoken",
                             {
                                 "portal_title": "Garden Guest Wi-Fi",
-                                "portal_header": "<b>Welcome to the garden</b>",
-                                "portal_footer": "<p>Contact your host for help</p>",
                                 "portal_css": "body{background:rgb(240, 245, 250)}",
                                 "portal_template": DEFAULT_TEMPLATE.replace("<main>", '<main class="custom-layout">'),
                                 "portal_message": "Welcome <friends>",
@@ -133,8 +132,6 @@ async def main(executable: str | None) -> None:
 
             await page.route("https://guest.example.com/**", route)
             await page.goto("https://guest.example.com/")
-            await page.get_by_text("Welcome to the garden", exact=True).wait_for()
-            await page.get_by_text("Contact your host for help", exact=True).wait_for()
             assert await page.locator("main.custom-layout").count() == 1
             assert await page.locator("body").evaluate("el => getComputedStyle(el).backgroundColor") == "rgb(240, 245, 250)"
             await page.get_by_label("Your name").fill("Alex")
@@ -144,7 +141,7 @@ async def main(executable: str | None) -> None:
             # Native form validity keeps an unchecked consent box from submitting.
             await page.get_by_role("button", name="Request access").click()
             assert not submissions
-            await page.get_by_role("checkbox").check()
+            await page.get_by_label("I agree to the guest Wi-Fi terms.").check()
             await page.get_by_role("button", name="Request access").click()
             await page.get_by_text("Request sent. Waiting for approval…", exact=True).wait_for()
             await page.reload()
@@ -155,6 +152,10 @@ async def main(executable: str | None) -> None:
             await page.reload()
             await page.get_by_text("Access approved. You can now use the internet.", exact=True).wait_for()
             assert await page.locator("form").is_hidden()
+            # An approved browser must not auto-navigate back through the captive gateway.
+            await page.get_by_role("link", name="Continue to the internet").wait_for()
+            assert page.url == "https://guest.example.com/"
+            assert await page.get_by_role("link", name="Continue to the internet").get_attribute("href") == "http://neverssl.example/"
             guest_status = "denied"
             await page.reload()
             await page.get_by_text("Access was denied.", exact=True).wait_for()
@@ -163,6 +164,7 @@ async def main(executable: str | None) -> None:
             await page.reload()
             await page.get_by_text("Your internet access has been cancelled.", exact=True).wait_for()
             assert submissions == [{"guest_name": "Alex", "note": "Visiting Sam\nArriving at 7pm", "terms_accepted": True}]
+            await check_guest_memory(browser)
             assert not errors, errors
             print(
                 "Browser smoke passed: admin actions, history pagination/filtering/errors, stale-response isolation, branding, consent, XSS escaping, multiline notes, request restoration after reload"

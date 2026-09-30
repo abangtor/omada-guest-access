@@ -1,5 +1,5 @@
-# Add this resource first as a JavaScript module in Settings > Dashboards > Resources:
-# /omada_guest_access/omada-guest-access-card.js?v=1.3.0
+# Resource registration is automatic for storage-managed dashboards.
+# YAML resource mode only: /omada_guest_access/omada-guest-access-card.js?v=1.3.1 (type: module)
 # Then paste this into a Manual card. Use the entity IDs from your integration.
 type: custom:omada-guest-access-card
 pending_entity: sensor.pending_requests

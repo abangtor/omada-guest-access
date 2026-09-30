@@ -11,7 +11,7 @@ from custom_components.omada_guest_access.portal_render import (
 from custom_components.omada_guest_access.settings import parse_duration_options
 
 
-def test_custom_header_footer_and_css():
+def test_removed_header_footer_ignored_and_custom_css_preserved():
     page = _page(
         "token",
         {
@@ -21,8 +21,8 @@ def test_custom_header_footer_and_css():
             "portal_title": "<script>bad()</script>",
         },
     )
-    assert "<header><b>Welcome</b></header>" in page
-    assert "<footer><p>Contact reception</p></footer>" in page
+    assert "<b>Welcome</b>" not in page
+    assert "<p>Contact reception</p>" not in page
     assert "body{background:#eeeeee}" in page
     assert "&lt;script&gt;bad()&lt;/script&gt;" in page
 
@@ -76,3 +76,9 @@ def test_invalid_duration_options(value):
 
 def test_duration_options_order_and_duplicates():
     assert parse_duration_options("168, 8, 1,8,24") == [1, 8, 24, 168]
+
+
+def test_legacy_template_aliases_render_empty():
+    page = _page("token", {"portal_template": DEFAULT_TEMPLATE + "{{ header_html }}{{ footer_html }}",
+                           "portal_header": "old header", "portal_footer": "old footer"})
+    assert "old header" not in page and "old footer" not in page

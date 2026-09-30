@@ -22,8 +22,6 @@ from .const import (
     CONF_PENDING_TIMEOUT,
     CONF_PORTAL_ACCENT,
     CONF_PORTAL_CSS,
-    CONF_PORTAL_FOOTER,
-    CONF_PORTAL_HEADER,
     CONF_PORTAL_MESSAGE,
     CONF_PORTAL_PORT,
     CONF_PORTAL_TEMPLATE,
@@ -160,8 +158,6 @@ class OmadaGuestAccessOptionsFlow(config_entries.OptionsFlow):
         keys = {
             CONF_DURATION_OPTIONS,
             CONF_ENABLE_REVOKE,
-            CONF_PORTAL_HEADER,
-            CONF_PORTAL_FOOTER,
             CONF_PORTAL_CSS,
             CONF_PORTAL_TEMPLATE,
             CONF_PORTAL_URL,
@@ -191,8 +187,6 @@ def validate_portal_settings(values: dict[str, Any]) -> None:
         (CONF_PORTAL_TITLE, DEFAULT_PORTAL_TITLE, 80),
         (CONF_PORTAL_MESSAGE, DEFAULT_PORTAL_MESSAGE, 500),
         (CONF_TERMS_TEXT, "", 4000),
-        (CONF_PORTAL_HEADER, "", 10000),
-        (CONF_PORTAL_FOOTER, "", 10000),
         (CONF_PORTAL_CSS, "", 20000),
         (CONF_PORTAL_TEMPLATE, "", 50000),
     ):
@@ -247,7 +241,7 @@ def _data_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
             vol.Optional(CONF_ENABLE_REVOKE, default=defaults.get(CONF_ENABLE_REVOKE, True)): cv.boolean,
             **{
                 vol.Optional(key, default=defaults.get(key, "")): TextSelector(TextSelectorConfig(multiline=True))
-                for key in (CONF_PORTAL_HEADER, CONF_PORTAL_FOOTER, CONF_PORTAL_CSS, CONF_PORTAL_TEMPLATE)
+                for key in (CONF_PORTAL_CSS, CONF_PORTAL_TEMPLATE)
             },
             vol.Optional(CONF_PORTAL_TITLE, default=defaults.get(CONF_PORTAL_TITLE, DEFAULT_PORTAL_TITLE)): vol.All(
                 cv.string, vol.Length(min=1, max=80)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict, deque
+from dataclasses import replace
 from datetime import timedelta
 from ipaddress import ip_address, ip_network
 from typing import Any
@@ -96,8 +97,6 @@ class GuestPortal:
 
     async def _index(self, request: web.Request) -> web.Response:
         self._expire_sessions()
-        if not self._allow(request):
-            raise web.HTTPTooManyRequests(text="Too many portal attempts. Please wait and try again.")
         ip = self._client_ip(request)
         session_id = request.cookies.get(_SESSION_COOKIE, "")
         session = self._sessions.get(session_id)
@@ -111,11 +110,16 @@ class GuestPortal:
             else session["context"]
         )
         if session is not None and (
-            session["context"] != context
+            replace(session["context"], redirect_url=None) != replace(context, redirect_url=None)
             or (not session["request_id"] and session["terms_version"] != self.coordinator.terms_version)
         ):
             session = None
         if session is None:
+            if not self._allow(request):
+                raise web.HTTPTooManyRequests(
+                    text="Too many portal attempts. Please wait and try again.",
+                    headers={"Retry-After": str(PORTAL_RATE_WINDOW_SECONDS)},
+                )
             if len(self._sessions) >= PORTAL_MAX_SESSIONS:
                 raise web.HTTPServiceUnavailable(text="Portal is busy. Please try again later.")
             session_id = uuid4().hex

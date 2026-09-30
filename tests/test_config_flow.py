@@ -163,6 +163,7 @@ async def flow_http(hass, hass_client):
 
     assert await async_setup_component(hass, "http", {})
     assert await async_setup_component(hass, "websocket_api", {})
+    assert await async_setup_component(hass, "lovelace", {})
     assert config_api.async_setup(hass)
     return await hass_client()
 
@@ -173,6 +174,7 @@ async def test_user_form_loads_over_http(flow_http):
     result = await response.json()
     assert result["type"] == "form"
     assert result["step_id"] == "user"
+    assert not {"portal_header", "portal_footer"}.intersection(field["name"] for field in result["data_schema"])
     fields = {field["name"]: field for field in result["data_schema"]}
     assert fields["controller_url"]["type"] == "string"
     assert fields["controller_url"]["required"]
@@ -257,8 +259,6 @@ async def test_options_store_durations_and_template(hass, entry):
         "retention_days": 30,
         "duration_options": "1, 8, 24, 168",
         "enable_revoke": True,
-        "portal_header": "<b>Welcome</b>",
-        "portal_footer": "<small>Contact us</small>",
         "portal_css": "body{background:#eeeeee}",
         "portal_template": DEFAULT_TEMPLATE,
     }

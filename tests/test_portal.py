@@ -199,7 +199,7 @@ async def test_custom_portal_text_is_escaped_and_no_terms_by_default(hass, coord
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in text
     assert "&lt;img src=x onerror=alert(1)&gt; $title" in text
     assert "background:#123ABC" in text
-    assert "type='checkbox'" not in text
+    assert "name='terms_accepted'" not in text
     assert "<script>alert" not in text
 
 
@@ -340,8 +340,8 @@ async def test_recovery_at_capacity_does_not_extend_session(
 async def test_custom_template_over_http(hass, coordinator, aiohttp_client, socket_enabled):
     from custom_components.omada_guest_access.portal_render import DEFAULT_TEMPLATE
 
-    coordinator.config.update(portal_template=DEFAULT_TEMPLATE, portal_header="<h2>Our home</h2>",
-                              portal_footer="<p>Ask your host</p>", portal_css="body{color:navy}")
+    coordinator.config.update(portal_template=DEFAULT_TEMPLATE.replace("<main>", "<main><h2>Our home</h2>"),
+                              portal_css="body{color:navy}")
     client = await aiohttp_client(GuestPortal(hass, coordinator, 0).create_app())
     response = await client.get("/", params=QUERY)
     assert response.status == 200
@@ -351,3 +351,37 @@ async def test_custom_template_over_http(hass, coordinator, aiohttp_client, sock
     response = await client.get("/", params=QUERY)
     assert response.status == 503
     assert "missing_secret" not in await response.text()
+
+
+async def test_repeated_valid_reloads_do_not_consume_session_creation_limit(
+    hass, coordinator, aiohttp_client, socket_enabled
+):
+    portal = GuestPortal(hass, coordinator, 0)
+    client = await aiohttp_client(portal.create_app())
+    headers = await landing(client)
+    token = headers['X-Portal-Token']
+    response = await client.post('/api/request', headers=headers, json={'guest_name': 'Alex'})
+    request_id = (await response.json())['request_id']
+    await coordinator.async_approve_request(request_id)
+    for index in range(25):
+        # Android connectivity checks may return with a different original URL.
+        response = await client.get('/', params={**QUERY, 'redirectUrl': f'http://check.example/{index}'},
+                                    headers={'Cookie': f'omada_guest_portal={token}'})
+        assert response.status == 200
+        assert response.cookies['omada_guest_portal'].value == token
+        assert request_id in await response.text()
+    assert len(portal._sessions) == 1
+    assert len(portal._attempts['127.0.0.1']) == 1
+    assert len(coordinator.requests) == 1
+    assert 'location.assign' not in await response.text()
+    # Changing the MAC is a new context, not an exemption from rate limiting.
+    for index in range(9):
+        response = await client.get('/', params={**QUERY, 'clientMac': f'AA:BB:CC:DD:00:{index:02X}'},
+                                    headers={'Cookie': f'omada_guest_portal={token}'})
+        assert response.status == 200
+    response = await client.get('/', params=QUERY)
+    assert response.status == 429
+    assert int(response.headers['Retry-After']) > 0
+    # Even when new-session budget is exhausted, existing sessions still load.
+    response = await client.get('/', params=QUERY, headers={'Cookie': f'omada_guest_portal={token}'})
+    assert response.status == 200

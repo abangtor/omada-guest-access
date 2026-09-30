@@ -10,10 +10,12 @@ A Home Assistant custom integration and separate captive portal for approval-bas
 
 - Dedicated portal listener, default port `8088`, independent of HA's main HTTP interface.
 - EAP and gateway redirect parsing, name/note submission, guest-specific status polling.
+- Returning-guest name/note prefilling in the same browser for 30 days, with opt-out and forget controls.
+- Automatic registration and version updates for the Lovelace card in storage-managed resources.
 - Hotspot Operator login with isolated cookies, CSRF tokens, bounded HTTP timeouts, and one expired-session retry.
 - Admin-only approve/deny/cancel services. Approval requires Omada success; cancellation uses Hotspot Manager deauthentication and confirms the grant is no longer active.
 - Lovelace card with a native visual editor, section/detail visibility controls, duration presets, cancellation, pending requests, unexpired grants, and stable admin-only history disclosures.
-- Configurable portal title, welcome message, accent color, header/footer HTML, custom CSS, and a sandboxed full-page Jinja layout. Plain-text terms with optional mandatory acceptance.
+- Configurable portal title, welcome message, accent color, custom CSS, and a sandboxed full-page Jinja layout. Plain-text terms with optional mandatory acceptance.
 - Server-validated consent with acceptance timestamp, SHA-256 terms version, and the exact accepted text persisted per request.
 - Serialized decisions, persistent requests, decision-user attribution, lifecycle events, expiry and retention.
 - Local cleanup independent of controller availability; active grants survive retention cleanup.
@@ -64,6 +66,16 @@ ports:
 
 The listener itself serves HTTP. Terminate HTTPS at the proxy; do not proxy guest traffic to HA's authenticated UI. HA's `http.trusted_proxies` setting is separate from this listener's integration options.
 
+## Returning guests and reload behavior
+
+After a successful request, the portal saves only the guest's **name and note** in that browser's local storage. A new visit to the same portal/controller/site prefills those fields for up to **30 days since the last successful submission**. Guests can edit them, uncheck **Remember my name and note**, or use **Forget saved details**. These controls also appear inside `form_html` in custom Jinja templates.
+
+This is browser-local convenience, not identification or automatic approval. A new session still requires a request and fresh terms acceptance. No request/session tokens or consent are stored in the remembered profile; other guests' history is never looked up by MAC. The fields are shared with anyone using that same browser profile. Forgetting details clears the browser copy, not HA's retained request history. Expired profiles are discarded on the next visit.
+
+HA restarts do not erase this browser storage, but Android captive windows may discard it, and Chrome/private tabs/other browsers have separate storage. If storage is disabled, the form continues to work without prefilling. Details submitted before installing this feature are not retroactively remembered.
+
+Reloading a still-valid portal session restores its request instead of creating a new one and does not consume the new-session rate limit. Approved pages **do not automatically redirect**: use **Continue to the internet**, or close the portal and browse normally. This prevents an authorization/connectivity delay from bouncing the phone repeatedly between Omada and the portal. If the link returns to the portal, check actual guest internet authorization in Omada; a local approved record is not proof that traffic is passing.
+
 ## Portal branding and terms
 
 Open the integration's **Configure / Options** dialog:
@@ -75,11 +87,10 @@ Open the integration's **Configure / Options** dialog:
 | Accent color | `#1769aa`; six-digit `#RRGGBB` |
 | Guest Wi-Fi terms | Empty; up to 4,000 characters, multiline plain text |
 | Require acceptance | Off; requires nonblank terms when enabled |
-| Portal header/footer | Empty; each up to 10,000 characters of administrator-authored HTML |
 | Custom portal CSS | Empty; up to 20,000 characters |
 | Full portal Jinja template | Empty uses the built-in layout; up to 50,000 characters |
 
-Title, message, and terms remain escaped plain text. Header/footer fields are intentionally HTML authored by an administrator. Everything can be served locally: no external fonts, images, or scripts are needed before authorization. Choose an accent with sufficient contrast against white button text.
+Title, message, and terms remain escaped plain text. Everything can be served locally: no external fonts, images, or scripts are needed before authorization. Choose an accent with sufficient contrast against white button text.
 
 When acceptance is required, both the browser form and server enforce it before creating a request. The server records its own timestamp, the SHA-256 hash of the displayed terms (UTF-8, outer whitespace trimmed), and a snapshot of that text. Browser-supplied timestamps, hashes, and terms text are ignored. Informational terms without mandatory acceptance do **not** create a consent record.
 
@@ -96,7 +107,6 @@ Available variables:
 | `title`, `message`, `accent` | Configured portal branding, automatically HTML-escaped |
 | `terms_text`, `require_terms` | Configured plain-text terms and acceptance requirement |
 | `request_id` | This browser's resumed request ID, or `none` |
-| `header_html`, `footer_html` | Administrator-authored HTML from the corresponding fields |
 | `style_html` | Built-in styles followed by your custom CSS; include in `<head>` |
 | `form_html` | Required request form, with multiline note and terms controls |
 | `status_html` | Required request-status region |
@@ -104,7 +114,7 @@ Available variables:
 
 Include `form_html`, `status_html`, and `script_html` **exactly once**, outside comments and visible page containers. Style or position them with CSS; do not duplicate the form, change its IDs, or nest it inside another form. The renderer verifies required fragments are present, but cannot guarantee arbitrary custom HTML/CSS is visually usable. Keep `style_html` if you want the integration's custom-CSS setting to apply.
 
-The Jinja environment is sandboxed and autoescaped. It receives **no HA state/functions, controller credentials, filesystem loader, other guests, or arbitrary redirect parameters**. Header/footer HTML is trusted administrator content; it is not evaluated as a second Jinja template. The CSP allows the built-in nonced script, inline styles, and same-origin/data-URI images. Remote fonts, remote scripts, third-party images, and inline event handlers are blocked. To add a logo, embed a data-URI image or serve it through your portal reverse proxy at the same origin; the integration itself does not provide arbitrary file hosting.
+The Jinja environment is sandboxed and autoescaped. It receives **no HA state/functions, controller credentials, filesystem loader, other guests, or arbitrary redirect parameters**. The CSP allows the built-in nonced script, inline styles, and same-origin/data-URI images. Remote fonts, remote scripts, third-party images, and inline event handlers are blocked. To add a logo, embed a data-URI image or serve it through your portal reverse proxy at the same origin; the integration itself does not provide arbitrary file hosting.
 
 ### Approval durations and cancelling sessions
 
@@ -120,8 +130,18 @@ A cancellation removes portal internet authorization; it does not necessarily di
 
 The integration serves the bundled card through **HA's normal HTTP interface**, not the guest listener.
 
-1. Settings → Dashboards → Resources (Advanced Mode): add `/omada_guest_access/omada-guest-access-card.js?v=1.3.0` as a **JavaScript module**.
-2. Refresh the dashboard, select **Add card → Omada Guest Access**, and use the visual editor. It suggests sensors from the same integration entry when available; confirm both selections. You can also use a Manual card:
+The card resource is **registered automatically** when the integration loads. Existing local resource entries are upgraded to the installed integration version and duplicates for this card are consolidated; unrelated resources are untouched. You do not need to add or update it manually in the usual storage-managed resource mode. Reload an already-open dashboard after an integration update. This registers the resource, not a card on your dashboard.
+
+For **YAML-managed resources**, add this under `lovelace.resources` in `configuration.yaml` instead (the integration does not rewrite your YAML):
+
+```yaml
+lovelace:
+  resources:
+    - url: /omada_guest_access/omada-guest-access-card.js?v=1.3.1
+      type: module
+```
+
+Refresh the dashboard, select **Add card → Omada Guest Access**, and use the visual editor. It suggests sensors from the same integration entry when available; confirm both selections. You can also use a Manual card:
 
 ```yaml
 type: custom:omada-guest-access-card
@@ -220,6 +240,13 @@ recorder:
 ```
 
 Guest responses exclude other guests, internal controller context and credentials. Guest pages/status/errors use `Cache-Control: no-store`; the portal disables its own access log. Configure reverse-proxy logging accordingly: the initial query contains MAC addresses and connection details.
+
+## Upgrade notes for 1.3.1
+
+- Update/redownload through HACS and restart HA, then refresh the dashboard. Storage-managed card resources update automatically; do not add another resource. YAML-managed resources still need the URL above.
+- Guest names and multiline notes are remembered after the next successful submission, subject to the browser-storage limits described above.
+- Automatic approval redirects are replaced by an explicit continue link; valid-session reloads no longer exhaust the session-creation limit. Restarting clears the previous in-memory attempt counters; reconnect to guest Wi-Fi for a fresh portal session.
+- The separate **header/footer settings are removed** and previously stored values are ignored. Custom CSS and full Jinja layouts remain. Legacy `header_html` / `footer_html` template variables render empty for compatibility; remove those placeholders from existing templates. Put any desired page layout directly in the Jinja template instead.
 
 ## Upgrade notes for 1.3.0
 

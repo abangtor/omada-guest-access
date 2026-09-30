@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from functools import lru_cache
@@ -16,8 +17,6 @@ from markupsafe import Markup
 from .const import (
     CONF_PORTAL_ACCENT,
     CONF_PORTAL_CSS,
-    CONF_PORTAL_FOOTER,
-    CONF_PORTAL_HEADER,
     CONF_PORTAL_MESSAGE,
     CONF_PORTAL_TEMPLATE,
     CONF_PORTAL_TITLE,
@@ -40,10 +39,10 @@ DEFAULT_TEMPLATE = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{{ title }}</title>{{ style_html }}</head>
-<body><header>{{ header_html }}</header><main>
+<body><main>
 <h1>{{ title }}</h1><p>{{ message }}</p>
 {{ form_html }}{{ status_html }}
-</main><footer>{{ footer_html }}</footer>{{ script_html }}</body></html>"""
+</main>{{ script_html }}</body></html>"""
 
 
 @lru_cache(maxsize=16)
@@ -68,9 +67,11 @@ def _page(session_id: str, config: dict[str, Any] | None = None, request_id: str
         "terms_text": config.get(CONF_TERMS_TEXT, ""),
         "require_terms": config.get(CONF_REQUIRE_TERMS, False),
         "request_id": request_id,
-        # Only admin-authored HTML and integration-built fragments bypass escaping.
-        "header_html": Markup(config.get(CONF_PORTAL_HEADER, "")),
-        "footer_html": Markup(config.get(CONF_PORTAL_FOOTER, "")),
+        # Empty compatibility aliases keep previously saved templates renderable.
+        # Separate header/footer settings have been removed and are never rendered.
+        "header_html": "",
+        "footer_html": "",
+        # Only integration-built fragments bypass escaping.
         "style_html": Markup(style),
         "form_html": Markup(form),
         "status_html": Markup(status),
@@ -112,6 +113,9 @@ def _builtin_page(session_id: str, config: dict[str, Any] | None = None, request
     return Template(_PAGE).substitute(
         token=json.dumps(session_id),
         request_id=json.dumps(request_id),
+        memory_key=json.dumps("omada_guest_access.guest." + hashlib.sha256(
+            json.dumps([config.get("controller_id", ""), config.get("site", "")]).encode()
+        ).hexdigest()[:24]),
         form_hidden=" hidden" if request_id else "",
         nonce=escape(session_id, quote=True),
         title=escape(config.get(CONF_PORTAL_TITLE, DEFAULT_PORTAL_TITLE)),
@@ -134,13 +138,36 @@ button:disabled{opacity:.6;cursor:wait}input[type=checkbox]{width:auto;margin-ri
 <h1>$title</h1><p>$message</p><form id='request'$form_hidden>
 <label>Your name<input name='guest_name' required maxlength='120' autocomplete='name'></label>
 <label>Optional note<textarea name='note' maxlength='500' rows='4'></textarea></label>$terms
-<button>Request access</button></form><p id='status' role='status' aria-live='polite'></p><script id='portal-script' nonce='$nonce'>
+<label class='consent'><input id='remember-details' type='checkbox' checked> Remember my name and note on this browser for 30 days.</label>
+<button type='submit'>Request access</button>
+<button id='forget-details' type='button' hidden>Forget saved details</button></form><p id='status' role='status' aria-live='polite'></p><script id='portal-script' nonce='$nonce'>
 const token=$token,f=document.querySelector('#request'),s=document.querySelector('#status');let id=$request_id,timer;
+const memoryKey=$memory_key,memoryTTL=30*24*60*60*1000,remember=f.querySelector('#remember-details'),forget=f.querySelector('#forget-details');
+function forgetDetails(){try{localStorage.removeItem(memoryKey)}catch(_){}forget.hidden=true}
+function restoreDetails(){try{
+  const raw=localStorage.getItem(memoryKey);if(!raw)return;
+  if(raw.length>8192)throw new Error();const saved=JSON.parse(raw),now=Date.now();
+  if(!saved||saved.version!==1||typeof saved.guest_name!=='string'||!saved.guest_name.trim()||saved.guest_name.length>120||
+    typeof saved.note!=='string'||saved.note.length>500||!Number.isFinite(saved.expires_at)||saved.expires_at<=now||saved.expires_at>now+memoryTTL)throw new Error();
+  f.elements.guest_name.value=saved.guest_name;f.elements.note.value=saved.note;forget.hidden=false;
+}catch(_){forgetDetails()}}
+function saveDetails(body){if(!remember.checked){forgetDetails();return}try{
+  localStorage.setItem(memoryKey,JSON.stringify({version:1,guest_name:body.guest_name,note:body.note,expires_at:Date.now()+memoryTTL}));
+  forget.hidden=false;
+}catch(_){/* Storage may be disabled by the captive browser; access still works. */}}
+forget.onclick=()=>{forgetDetails();f.elements.guest_name.value='';f.elements.note.value='';remember.checked=false};
+remember.onchange=()=>{if(!remember.checked)forgetDetails()};
+restoreDetails();
 async function api(path,opts={}){let r=await fetch(path,{...opts,headers:{'Content-Type':'application/json','X-Portal-Token':token,...(opts.headers||{})}});if(!r.ok)throw new Error();return r.json()}
-async function poll(){try{let x=await api('/api/request/'+id);if(x.status==='pending'){s.textContent='Request sent. Waiting for approval…';return;}clearInterval(timer);if(x.status==='approved'){s.textContent='Access approved. You can now use the internet.';if(x.redirect_url)location.assign(x.redirect_url)}else if(x.status==='denied')s.textContent=x.denial_reason||'Access was denied.';else if(x.status==='revoked')s.textContent='Your internet access has been cancelled.';else s.textContent='This request has expired.'}catch(_){clearInterval(timer);s.textContent='Your portal session expired. Please reconnect to Guest Wi-Fi.'}}
-f.onsubmit=async e=>{e.preventDefault();const button=f.querySelector('button');button.disabled=true;
+function showContinue(target){try{
+  const url=new URL(target);if(!['http:','https:'].includes(url.protocol)||url.origin===location.origin||url.username||url.password)return;
+  let link=document.querySelector('#continue-internet');if(!link){link=document.createElement('a');link.id='continue-internet';s.after(link)}
+  link.href=url.href;link.rel='noreferrer';link.textContent='Continue to the internet';
+}catch(_){}}
+async function poll(){try{let x=await api('/api/request/'+id);if(x.status==='pending'){s.textContent='Request sent. Waiting for approval…';return;}clearInterval(timer);if(x.status==='approved'){s.textContent='Access approved. You can now use the internet.';if(x.redirect_url)showContinue(x.redirect_url)}else if(x.status==='denied')s.textContent=x.denial_reason||'Access was denied.';else if(x.status==='revoked')s.textContent='Your internet access has been cancelled.';else s.textContent='This request has expired.'}catch(_){clearInterval(timer);s.textContent='Your portal session expired. Please reconnect to Guest Wi-Fi.'}}
+f.onsubmit=async e=>{e.preventDefault();const button=f.querySelector('button[type=submit]');button.disabled=true;
 try{const body=Object.fromEntries(new FormData(f));if(f.elements.terms_accepted)body.terms_accepted=f.elements.terms_accepted.checked;
-let x=await api('/api/request',{method:'POST',body:JSON.stringify(body)});id=x.request_id;f.hidden=true;s.textContent='Request sent. Waiting for approval…';timer=setInterval(poll,3000);await poll()}
+let x=await api('/api/request',{method:'POST',body:JSON.stringify(body)});id=x.request_id;saveDetails(body);f.hidden=true;s.textContent='Request sent. Waiting for approval…';timer=setInterval(poll,3000);await poll()}
 catch(_){s.textContent='Unable to send your request. Please reconnect and try again.'}finally{button.disabled=false}};
 if(id){f.hidden=true;s.textContent='Restoring your request…';timer=setInterval(poll,3000);poll();}
 </script></body></html>"""

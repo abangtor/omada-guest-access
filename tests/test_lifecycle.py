@@ -70,6 +70,9 @@ async def test_full_ha_setup_static_resource_entities_and_reload(
     http = await hass_client()
     await hass.async_block_till_done()
     coordinator = entry.runtime_data
+    resources = hass.data["lovelace"].resources
+    assert any(item["url"] == "/omada_guest_access/omada-guest-access-card.js?v=1.3.1"
+               and item["type"] == "module" for item in resources.async_items())
     response = await http.get("/omada_guest_access/omada-guest-access-card.js")
     assert response.status == 200
     assert "class OmadaGuestAccessCard" in await response.text()
@@ -83,4 +86,5 @@ async def test_full_ha_setup_static_resource_entities_and_reload(
     await hass.async_block_till_done()
     assert entry.runtime_data.portal.running
     assert len(entry.runtime_data.requests) == 1
+    assert sum(item["url"].startswith("/omada_guest_access/") for item in resources.async_items()) == 1
     assert await hass.config_entries.async_unload(entry.entry_id)
