@@ -69,6 +69,7 @@ class OmadaGuestAccessConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def _async_configure(self, step: str, user_input: dict[str, Any] | None, entry=None) -> FlowResult:
         errors: dict[str, str] = {}
+        placeholders: dict[str, str] = {}
         values = dict(entry.data) | dict(entry.options) if entry else {}
         if user_input is not None:
             values.update(user_input)
@@ -83,12 +84,14 @@ class OmadaGuestAccessConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 else:
                     client = OmadaExternalPortalClient(self.hass, values)
                     await client.async_test_connection()
-            except OmadaAuthError:
+            except OmadaAuthError as err:
                 errors["base"] = "invalid_auth"
+                placeholders["error_detail"] = str(err)
             except OmadaTlsError:
                 errors["base"] = "tls_error"
-            except OmadaApiError:
+            except OmadaApiError as err:
                 errors["base"] = "cannot_connect"
+                placeholders["error_detail"] = str(err)
             except ValueError:
                 errors["base"] = "invalid_config"
             finally:
@@ -112,7 +115,9 @@ class OmadaGuestAccessConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     )
                 self._abort_if_unique_id_configured()
                 return self.async_create_entry(title=f"Omada Guest Access ({values[CONF_SITE]})", data=values)
-        return self.async_show_form(step_id=step, data_schema=_data_schema(values), errors=errors)
+        return self.async_show_form(
+            step_id=step, data_schema=_data_schema(values), errors=errors, description_placeholders=placeholders
+        )
 
     @staticmethod
     def async_get_options_flow(config_entry: config_entries.ConfigEntry) -> OmadaGuestAccessOptionsFlow:

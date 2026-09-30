@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
-from aiohttp import ClientError, ClientSession, ClientSSLError, ClientTimeout, CookieJar
+from aiohttp import ClientConnectionError, ClientError, ClientSession, ClientSSLError, ClientTimeout, CookieJar
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
 from homeassistant.util import dt as dt_util
@@ -144,7 +144,7 @@ class OmadaExternalPortalClient:
         try:
             async with self._session.post(url, headers=headers, json=payload, allow_redirects=False) as response:
                 if response.status in {401, 403}:
-                    raise OmadaAuthError("Omada rejected authentication")
+                    raise OmadaAuthError(f"Omada rejected authentication (HTTP {response.status})")
                 if response.status != 200:
                     raise OmadaApiError(f"Omada API returned HTTP {response.status}")
                 try:
@@ -153,16 +153,22 @@ class OmadaExternalPortalClient:
                     raise OmadaApiError("Omada returned invalid JSON") from err
         except ClientSSLError as err:
             raise OmadaTlsError("Unable to establish a verified TLS connection to the Omada controller") from err
-        except (ClientError, TimeoutError) as err:
-            raise OmadaApiError("Unable to reach Omada controller (network error or timeout)") from err
+        except TimeoutError as err:
+            raise OmadaApiError("Omada controller request timed out after 15 seconds") from err
+        except ClientConnectionError as err:
+            raise OmadaApiError("Unable to connect to the Omada controller from Home Assistant") from err
+        except ClientError as err:
+            raise OmadaApiError("Omada HTTP request failed") from err
         if not isinstance(result, dict) or "errorCode" not in result:
             raise OmadaApiError("Omada returned an invalid API response")
         code = result["errorCode"]
+        if type(code) is not int:
+            raise OmadaApiError("Omada returned an invalid API error code")
         if code != 0:
             # Omada uses -1005 for an expired/missing session. Do not expose
             # arbitrary controller response text (which can contain secrets).
             if not csrf or code == -1005:
-                raise OmadaAuthError("Omada rejected the Hotspot Operator credentials or session")
+                raise OmadaAuthError(f"Omada rejected the Hotspot Operator login/session (error code {code})")
             raise OmadaApiError(f"Omada rejected authorization (error code {code})")
         return result
 

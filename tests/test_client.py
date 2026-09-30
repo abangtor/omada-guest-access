@@ -113,7 +113,7 @@ async def test_timeout_is_sanitized(hass, config):
     client = OmadaExternalPortalClient(hass, config)
     try:
         with patch.object(client._session, "post", side_effect=TimeoutError("secret-data")):
-            with pytest.raises(OmadaApiError, match="network error or timeout") as error:
+            with pytest.raises(OmadaApiError, match="timed out after 15 seconds") as error:
                 await client.async_test_connection()
             assert "secret-data" not in str(error.value)
     finally:
@@ -136,5 +136,27 @@ async def test_certificate_failure_is_distinct_and_sanitized(hass, config):
             with pytest.raises(OmadaTlsError, match='verified TLS connection') as error:
                 await client.async_test_connection()
             assert 'private certificate detail' not in str(error.value)
+    finally:
+        await client.async_close()
+
+
+@pytest.mark.parametrize('code', [-30109, 'private-data', True])
+async def test_login_error_only_exposes_numeric_code(hass, config, code, aiohttp_server, socket_enabled):
+    async def login(request):
+        return web.json_response({'errorCode': code, 'msg': 'private-data', 'result': {'token': 'secret-token'}})
+
+    app = web.Application()
+    app.router.add_post('/controller/api/v2/hotspot/login', login)
+    server = await aiohttp_server(app)
+    config['controller_url'] = str(server.make_url('/'))
+    client = OmadaExternalPortalClient(hass, config)
+    try:
+        with pytest.raises(OmadaApiError) as error:
+            await client.async_test_connection()
+        detail = str(error.value)
+        assert 'private-data' not in detail
+        assert 'secret-token' not in detail
+        if type(code) is int:
+            assert str(code) in detail
     finally:
         await client.async_close()

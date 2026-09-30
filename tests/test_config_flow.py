@@ -231,3 +231,16 @@ async def test_connection_errors_are_not_reported_as_bad_credentials(hass, confi
     assert result['type'] is FlowResultType.FORM
     assert result['errors'] == {'base': expected}
     flow_client.async_close.assert_awaited_once()
+
+
+async def test_api_error_details_reach_frontend(flow_http, config, flow_client):
+    from custom_components.omada_guest_access.omada_client import OmadaApiError
+
+    flow_client.async_test_connection.side_effect = OmadaApiError('Omada API returned HTTP 404')
+    response = await flow_http.post('/api/config/config_entries/flow', json={'handler': DOMAIN})
+    flow_id = (await response.json())['flow_id']
+    response = await flow_http.post(f'/api/config/config_entries/flow/{flow_id}', json=config)
+    assert response.status == 200
+    result = await response.json()
+    assert result['errors'] == {'base': 'cannot_connect'}
+    assert result['description_placeholders'] == {'error_detail': 'Omada API returned HTTP 404'}

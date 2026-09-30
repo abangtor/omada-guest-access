@@ -149,7 +149,7 @@ Guest responses exclude other guests, internal controller context and credential
 
 ## Upgrade notes for 1.2.2
 
-- Setup now distinguishes controller TLS failures from network/API failures and rejected credentials.
+- Setup now distinguishes controller TLS failures from network/API failures and rejected credentials. Errors include sanitized timeout, HTTP-status, API-code or unexpected-response details, never credentials or raw controller response text.
 - For a trusted local controller with a self-signed certificate, uncheck **Verify controller TLS certificate** in the integration form. This keeps HTTPS encryption but disables certificate verification for this integration only. Prefer a trusted certificate and matching hostname when available.
 - The workaround also works in earlier versions; no update is required to change this setting. Update/redownload from HACS and restart HA to receive the clearer errors.
 

@@ -75,8 +75,8 @@
       }
     },
     "error": {
-      "cannot_connect": "Unable to communicate with the Omada External Portal API. Check the Controller URL/ID, network connectivity, and controller API availability.",
-      "invalid_auth": "Hotspot Operator credentials were rejected.",
+      "cannot_connect": "Unable to communicate with the Omada External Portal API: {error_detail}. Check the Controller URL/ID and network connectivity from Home Assistant.",
+      "invalid_auth": "Hotspot Operator login failed: {error_detail}.",
       "invalid_config": "Check controller URL/ID, portal origin, IP/CIDR settings, and portal text. Accent must be #RRGGBB; required terms must not be blank. Title/message/terms limits: 80/500/4000 characters.",
       "port_in_use": "Another Omada Guest Access entry uses this port.",
       "tls_error": "Unable to establish a verified TLS connection to the controller. For a trusted local controller using a self-signed certificate, disable Verify controller TLS certificate, or install a trusted certificate matching the controller hostname."
