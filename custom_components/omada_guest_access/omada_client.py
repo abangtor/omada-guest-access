@@ -1,7 +1,7 @@
 """Omada's documented External Portal API (5.0.15–6.2.0).
 
 Reference: https://support.omadanetworks.com/en/document/13080
-The protocol authorizes clients; it does not document revocation or discovery.
+Deauthentication uses the separate Hotspot Manager web API observed on Omada 6.0.0.39.
 """
 
 from __future__ import annotations
@@ -11,14 +11,21 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import quote, urlsplit, urlunsplit
 
 from aiohttp import ClientConnectionError, ClientError, ClientSession, ClientSSLError, ClientTimeout, CookieJar
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
 from homeassistant.util import dt as dt_util
 
-from .const import CONF_CONTROLLER_ID, CONF_CONTROLLER_URL, CONF_PASSWORD, CONF_USERNAME, CONF_VERIFY_SSL
+from .const import (
+    CONF_CONTROLLER_ID,
+    CONF_CONTROLLER_URL,
+    CONF_ENABLE_REVOKE,
+    CONF_PASSWORD,
+    CONF_USERNAME,
+    CONF_VERIFY_SSL,
+)
 
 
 class OmadaApiError(Exception):
@@ -84,6 +91,7 @@ class OmadaExternalPortalClient:
             cookie_jar=CookieJar(unsafe=True),  # Controllers commonly use IP addresses.
             timeout=ClientTimeout(total=15),
         )
+        self.supports_revoke = config.get(CONF_ENABLE_REVOKE, True)
         self._username = config[CONF_USERNAME]
         self._password = config[CONF_PASSWORD]
         self._csrf_token: str | None = None
@@ -118,11 +126,90 @@ class OmadaExternalPortalClient:
             return expires
 
     async def async_revoke(self, context: PortalContext) -> None:
-        """Never claim that an undocumented zero-duration grant revoked access."""
-        raise OmadaApiError(
-            "Revocation is not supported by the documented External Portal API. "
-            "Disconnect/revoke the client in Omada Hotspot Manager or wait for its grant to expire."
+        """Deauthorize using Hotspot Manager, then confirm the record is inactive.
+
+        Protocol source: Omada 6.0.0.39's authClients models/controllers (web UI).
+        Do not use DELETE (history deletion) or a zero-duration authorization.
+        """
+        if not self.supports_revoke:
+            raise OmadaApiError("Hotspot Manager deauthentication is disabled in integration options")
+        async with self._lock:
+            records = await self._async_hotspot_clients(context.site)
+            matches = [row for row in records if self._matches_grant(row, context)]
+            if len(matches) != 1:
+                raise OmadaApiError(
+                    "Cannot uniquely identify the active External Portal grant in Hotspot Manager. "
+                    "Check operator site permissions and revoke manually if necessary."
+                )
+            identifier = matches[0]["id"]
+            path = f"/hotspot/sites/{quote(context.site, safe='')}/cmd/clients/{quote(identifier, safe='')}/disconnect"
+            await self._async_authenticated_request(path)
+            for attempt in range(3):
+                records = await self._async_hotspot_clients(context.site)
+                if not any(
+                    (row["id"] == identifier and row["valid"]) or self._matches_grant(row, context) for row in records
+                ):
+                    return
+                if attempt < 2:
+                    await asyncio.sleep(0.25)
+            raise OmadaApiError(
+                "Omada accepted deauthentication but still reports an active grant. "
+                "The local record was not marked revoked; refresh Hotspot Manager before retrying."
+            )
+
+    @staticmethod
+    def _matches_grant(row: dict, context: PortalContext) -> bool:
+        mac = str(row.get("mac", "")).upper().replace("-", ":")
+        return (
+            mac == context.client_mac.upper().replace("-", ":")
+            and row.get("valid") is True
+            and row.get("authType") == 4
+            and (not context.ssid_name or row.get("ssid") == context.ssid_name)
         )
+
+    async def _async_hotspot_clients(self, site: str) -> list[dict]:
+        """Read all pages; fail closed on malformed or truncated discovery."""
+        rows: list[dict] = []
+        identifiers: set[str] = set()
+        expected_total: int | None = None
+        path = f"/hotspot/sites/{quote(site, safe='')}/clients"
+        for page in range(1, 101):
+            response = await self._async_authenticated_request(
+                path, method="GET", params={"currentPage": page, "currentPageSize": 100}
+            )
+            result = response.get("result")
+            if not isinstance(result, dict) or not isinstance(result.get("data"), list):
+                raise OmadaApiError("Omada returned an invalid Hotspot Manager client list")
+            total = result.get("totalRows")
+            if type(total) is not int or total < 0 or total > 10000:
+                raise OmadaApiError("Omada returned an invalid Hotspot Manager client count")
+            if expected_total is not None and total != expected_total:
+                raise OmadaApiError("Omada Hotspot Manager client count changed during pagination; retry")
+            expected_total = total
+            batch = result["data"]
+            if len(rows) + len(batch) > total:
+                raise OmadaApiError("Omada returned an inconsistent Hotspot Manager client count")
+            for row in batch:
+                if not isinstance(row, dict) or not isinstance(row.get("id"), str) or not row["id"]:
+                    raise OmadaApiError("Omada returned an invalid Hotspot Manager client record")
+                if row["id"] in identifiers or type(row.get("valid")) is not bool:
+                    raise OmadaApiError("Omada returned inconsistent Hotspot Manager client records")
+                identifiers.add(row["id"])
+                rows.append(row)
+            if len(rows) == total:
+                return rows
+            if not batch:
+                break
+        raise OmadaApiError("Omada Hotspot Manager client list was incomplete")
+
+    async def _async_authenticated_request(self, path: str, *, method: str = "POST", params=None) -> dict:
+        if not self._csrf_token:
+            await self._async_login()
+        try:
+            return await self._async_raw_request(path, None, csrf=True, method=method, params=params)
+        except OmadaAuthError:
+            await self._async_login()
+            return await self._async_raw_request(path, None, csrf=True, method=method, params=params)
 
     async def _async_login(self) -> None:
         self._csrf_token = None
@@ -136,13 +223,21 @@ class OmadaExternalPortalClient:
             raise OmadaApiError("Hotspot Operator login did not return a CSRF token")
         self._csrf_token = token
 
-    async def _async_raw_request(self, path: str, payload: dict, *, csrf: bool) -> dict[str, Any]:
+    async def _async_raw_request(
+        self, path: str, payload: dict | None, *, csrf: bool, method: str = "POST", params=None
+    ) -> dict[str, Any]:
         headers = {"Accept": "application/json"}
         if csrf and self._csrf_token:
             headers["Csrf-Token"] = self._csrf_token
         url = f"{self._base_url}/{self._controller_id}/api/v2{path}"
         try:
-            async with self._session.post(url, headers=headers, json=payload, allow_redirects=False) as response:
+            request = self._session.get if method == "GET" else self._session.post
+            kwargs = {"headers": headers, "allow_redirects": False}
+            if payload is not None:
+                kwargs["json"] = payload
+            if params is not None:
+                kwargs["params"] = params
+            async with request(url, **kwargs) as response:
                 if response.status in {401, 403}:
                     raise OmadaAuthError(f"Omada rejected authentication (HTTP {response.status})")
                 if response.status != 200:
@@ -169,7 +264,7 @@ class OmadaExternalPortalClient:
             # arbitrary controller response text (which can contain secrets).
             if not csrf or code == -1005:
                 raise OmadaAuthError(f"Omada rejected the Hotspot Operator login/session (error code {code})")
-            raise OmadaApiError(f"Omada rejected authorization (error code {code})")
+            raise OmadaApiError(f"Omada rejected the API operation (error code {code})")
         return result
 
 

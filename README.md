@@ -11,9 +11,9 @@ A Home Assistant custom integration and separate captive portal for approval-bas
 - Dedicated portal listener, default port `8088`, independent of HA's main HTTP interface.
 - EAP and gateway redirect parsing, name/note submission, guest-specific status polling.
 - Hotspot Operator login with isolated cookies, CSRF tokens, bounded HTTP timeouts, and one expired-session retry.
-- Admin-only approve/deny services; approval is recorded only after Omada accepts it.
-- Optional Lovelace card with approve/deny buttons, pending requests, unexpired grants, and admin-only searchable/paginated history.
-- Configurable portal title, welcome message, accent color, and plain-text terms with optional mandatory acceptance.
+- Admin-only approve/deny/cancel services. Approval requires Omada success; cancellation uses Hotspot Manager deauthentication and confirms the grant is no longer active.
+- Lovelace card with a native visual editor, section/detail visibility controls, duration presets, cancellation, pending requests, unexpired grants, and stable admin-only history disclosures.
+- Configurable portal title, welcome message, accent color, header/footer HTML, custom CSS, and a sandboxed full-page Jinja layout. Plain-text terms with optional mandatory acceptance.
 - Server-validated consent with acceptance timestamp, SHA-256 terms version, and the exact accepted text persisted per request.
 - Serialized decisions, persistent requests, decision-user attribution, lifecycle events, expiry and retention.
 - Local cleanup independent of controller availability; active grants survive retention cleanup.
@@ -22,7 +22,7 @@ A Home Assistant custom integration and separate captive portal for approval-bas
 
 ### Important boundaries
 
-- **Revocation is not supported by the documented External Portal API.** Earlier code incorrectly assumed that zero-duration authorization revoked access. That behavior has been removed. The retained `revoke_access` service raises an explanatory error and does not alter the grant. End access early in Omada Hotspot Manager, or let the grant expire.
+- **Deauthentication uses the separate Hotspot Manager web API**, not the documented External Portal API. It follows the operator UI flow observed on Omada **6.0.0.39** (see [protocol notes](docs/hotspot-deauthentication.md)). The operator needs client-management permission for the site. Other controller versions may differ. Disable **Enable guest deauthentication** if your controller does not support it. Live traffic-stop behavior still needs testing on your controller; no zero-duration workaround or history deletion is used.
 - The active sensor lists **locally recorded, unexpired grants**, not a controller-confirmed live client list. Manual controller changes are not reconciled. A network timeout during authorization can leave the outcome uncertain; inspect Omada before retrying.
 - Omada redirect query parameters are **unsigned and forgeable**. Opaque tokens protect subsequent status access, but do not authenticate the original MAC/AP context. Guest names are self-reported. Restrict ingress to the guest network and manually review requests; do not automatically approve names or MACs as authenticated identities.
 - Voucher creation, bandwidth profiles, revoke-all, and portal translations are not implemented. History shows retained request records, not an immutable event-by-event audit trail.
@@ -44,7 +44,7 @@ Home Assistant 2025.1+ is the declared minimum. The regression suite currently r
 5. Allow unauthenticated guests to resolve/reach that hostname. Keep HA port `8123`, controller management ports, and other LAN services inaccessible from the guest VLAN.
 6. Configure **Public portal URL**, **Trusted proxy IPs/CIDRs**, and preferably **Allowed guest IPs/CIDRs** in integration options. Each integration entry needs a distinct listen port.
 
-The controller URL can be an origin plus a separate Controller ID, or a controller UI URL containing the ID. For example, `https://controller.local:8043/abc123/` normalizes to origin `https://controller.local:8043` and ID `abc123`. Controller reverse-proxy subpaths are not supported. Use the actual site name expected by the redirect.
+The controller URL can be an origin plus a separate Controller ID, or a controller UI URL containing the ID. For example, `https://controller.local:8043/abc123/` normalizes to origin `https://controller.local:8043` and ID `abc123`. Controller reverse-proxy subpaths are not supported. Use the exact `site` value from the redirect (typically the site ID, not its display name).
 
 ### Proxy example
 
@@ -75,33 +75,107 @@ Open the integration's **Configure / Options** dialog:
 | Accent color | `#1769aa`; six-digit `#RRGGBB` |
 | Guest Wi-Fi terms | Empty; up to 4,000 characters, multiline plain text |
 | Require acceptance | Off; requires nonblank terms when enabled |
+| Portal header/footer | Empty; each up to 10,000 characters of administrator-authored HTML |
+| Custom portal CSS | Empty; up to 20,000 characters |
+| Full portal Jinja template | Empty uses the built-in layout; up to 50,000 characters |
 
-Text is escaped, never rendered as HTML. Everything is served locally: no external fonts, images, or scripts are needed before authorization. Choose an accent with sufficient contrast against white button text.
+Title, message, and terms remain escaped plain text. Header/footer fields are intentionally HTML authored by an administrator. Everything can be served locally: no external fonts, images, or scripts are needed before authorization. Choose an accent with sufficient contrast against white button text.
 
 When acceptance is required, both the browser form and server enforce it before creating a request. The server records its own timestamp, the SHA-256 hash of the displayed terms (UTF-8, outer whitespace trimmed), and a snapshot of that text. Browser-supplied timestamps, hashes, and terms text are ignored. Informational terms without mandatory acceptance do **not** create a consent record.
 
 Saving options reloads the listener: guests with an open page should reconnect. Changes apply to new requests; existing requests retain their original consent (or lack of consent). They are not silently re-consented or automatically revoked. This is a self-reported acceptance record, not verification of a guest's legal identity.
 
+### Full-page Jinja layouts
+
+Paste [examples/portal.html.jinja](examples/portal.html.jinja) into **Full portal Jinja template** in integration options. Leave it blank to restore the built-in layout. The template is stored in the config entry, not loaded from a filesystem path. Both initial and resumed-request layouts are validated on save; template errors are reported in the options dialog.
+
+Available variables:
+
+| Variable | Meaning |
+|---|---|
+| `title`, `message`, `accent` | Configured portal branding, automatically HTML-escaped |
+| `terms_text`, `require_terms` | Configured plain-text terms and acceptance requirement |
+| `request_id` | This browser's resumed request ID, or `none` |
+| `header_html`, `footer_html` | Administrator-authored HTML from the corresponding fields |
+| `style_html` | Built-in styles followed by your custom CSS; include in `<head>` |
+| `form_html` | Required request form, with multiline note and terms controls |
+| `status_html` | Required request-status region |
+| `script_html` | Required session-bound submission/recovery/polling script; include last in `<body>` |
+
+Include `form_html`, `status_html`, and `script_html` **exactly once**, outside comments and visible page containers. Style or position them with CSS; do not duplicate the form, change its IDs, or nest it inside another form. The renderer verifies required fragments are present, but cannot guarantee arbitrary custom HTML/CSS is visually usable. Keep `style_html` if you want the integration's custom-CSS setting to apply.
+
+The Jinja environment is sandboxed and autoescaped. It receives **no HA state/functions, controller credentials, filesystem loader, other guests, or arbitrary redirect parameters**. Header/footer HTML is trusted administrator content; it is not evaluated as a second Jinja template. The CSP allows the built-in nonced script, inline styles, and same-origin/data-URI images. Remote fonts, remote scripts, third-party images, and inline event handlers are blocked. To add a logo, embed a data-URI image or serve it through your portal reverse proxy at the same origin; the integration itself does not provide arbitrary file hosting.
+
+### Approval durations and cancelling sessions
+
+In integration options, set:
+
+- **Default access duration:** `8` hours by default. Used by service calls with no duration and by cards without a duration override.
+- **Approval dropdown presets:** `1,2,4,8,12,24,48,72,168` by default. Any comma-separated whole hours from **1 to 168 (one week)**; duplicates are removed and choices sorted. These are UI suggestions, not a permission policy; explicit administrator service calls retain the existing 1–720-hour range.
+- **Enable guest deauthentication:** on by default. Adds **Cancel access** for active grants. It uses the same operator credentials to discover the active External Portal grant, calls Hotspot Manager's disconnect command, and confirms that no matching grant remains active before marking the request revoked. A failure leaves the local grant unchanged and shows an error.
+
+A cancellation removes portal internet authorization; it does not necessarily disassociate the radio/Wi-Fi link. Guest access is denied until a new authorization is issued. If the operator lacks permission, the record is missing/ambiguous, or the controller still reports it active, use Hotspot Manager to inspect it. A timeout after the command may have cancelled access even though HA reports uncertainty; do not treat the local grant list as authoritative live state.
+
 ## Request-management dashboard card
 
 The integration serves the bundled card through **HA's normal HTTP interface**, not the guest listener.
 
-1. Settings → Dashboards → Resources (Advanced Mode): add `/omada_guest_access/omada-guest-access-card.js?v=1.2.0` as a **JavaScript module**.
-2. Add a Manual card using your actual sensor entity IDs:
+1. Settings → Dashboards → Resources (Advanced Mode): add `/omada_guest_access/omada-guest-access-card.js?v=1.3.0` as a **JavaScript module**.
+2. Refresh the dashboard, select **Add card → Omada Guest Access**, and use the visual editor. It suggests sensors from the same integration entry when available; confirm both selections. You can also use a Manual card:
 
 ```yaml
 type: custom:omada-guest-access-card
 pending_entity: sensor.pending_requests
 active_entity: sensor.active_sessions
-duration_hours: 8
 title: Guest Wi-Fi
+# duration_hours: 8  # optional card override; omit to follow integration options
 ```
 
-Entity IDs may have suffixes if multiple sites/integrations are installed. Find them under the integration's entities. Only administrators see enabled approval controls. Errors are displayed in the card; grants show their scheduled expiry and the revocation limitation.
+Entity IDs may have suffixes if multiple sites/integrations are installed. Find them under the integration's entities. Only administrators see enabled approval controls. Errors are displayed in the card; grants show their scheduled expiry and a Cancel access button when deauthentication is enabled.
+
+### Visual editor and visibility
+
+Edit the card to choose sensors, title, optional default-duration override (1–720 hours; blank follows integration options), history page size (1–50), compact spacing, and what to display. Existing YAML remains compatible; all sections/details are shown by default.
+
+| YAML option | Default | Controls |
+|---|---|---|
+| `show_title` | `true` | Card title |
+| `show_pending` | `true` | Pending requests section |
+| `show_active` | `true` | Unexpired grants section |
+| `show_history` | `true` | Admin history section; hidden history is not fetched |
+| `show_notes` | `true` | Guest notes in pending requests and history |
+| `show_mac` | `true` | MAC address labels |
+| `show_timestamps` | `true` | Requested, expiry, update, and consent timestamps |
+| `show_actions` | `true` | Approve, deny, and cancellation buttons |
+| `show_duration_selector` | `true` | Alternative-duration dropdown and approval button |
+| `show_notices` | `true` | Explanatory/admin notices (errors remain visible) |
+| `show_empty` | `true` | Empty pending/grant sections |
+| `show_history_details` | `true` | Expandable history details |
+| `show_decision_user` | `true` | HA decision user IDs in history |
+| `show_terms` | `true` | Consent/terms details in history |
+| `compact` | `false` | Reduced spacing |
+| `history_page_size` | `20` | Requests per history page, 1–50 |
+
+Both sensor selections are still required, including for a history-only card. Visibility is a presentation setting, **not an access-control or redaction mechanism**: HA permissions and backend history authorization still apply. Turning off MAC labels does not redact arbitrary guest notes or terms text.
+
+For example, a minimal pending-request card (also configurable entirely in the visual editor):
+
+```yaml
+type: custom:omada-guest-access-card
+pending_entity: sensor.pending_requests
+active_entity: sensor.active_sessions
+title: Guest approvals
+duration_hours: 4
+show_active: false
+show_history: false
+show_mac: false
+show_notices: false
+compact: true
+```
 
 ### Request history
 
-Administrators can select **Show history**, filter by status, or search by name, MAC address, or request ID. Pages contain 20 requests, newest first. **Request details** shows timestamps, denial reason, the HA decision user ID, and any recorded terms acceptance and text. Use **Search / refresh** for fresh data; history is a snapshot and is not streamed. New requests or retention cleanup between page loads can shift page boundaries.
+Administrators can select **Show history**, filter by status, or search by name, MAC address, or request ID. Pages contain 20 requests by default (configurable from 1–50), newest first. **Request details** shows timestamps, denial reason, the HA decision user ID, and any recorded terms acceptance and text. Use **Search / refresh** for fresh data; history is a snapshot and is not streamed. Expanded details remain open across HA state updates, refreshes, and pagination within the card session; search input and focus survive updates too. A dashboard reload or card reconfiguration resets this temporary state. New requests or retention cleanup between page loads can shift page boundaries.
 
 The card obtains the integration entry ID from the pending sensor. History uses HA's authenticated WebSocket command `omada_guest_access/history`, with server-side admin checks; it is never exposed on the guest port or added to sensor attributes. Requests for missing, unloaded, or unrelated entries are rejected. Automation decisions and older records can lack a user ID. This is a browsable current/final-state record, not an append-only controller audit log.
 
@@ -117,17 +191,17 @@ Omit `status` for all statuses. `query` is case-insensitive (maximum 120 charact
 
 | Item | Meaning |
 | --- | --- |
-| Pending requests sensor | Count and `requests` attribute for the pending queue. |
+| Pending requests sensor | Count, `requests`, `entry_id`, `default_duration`, and `duration_options` attributes. |
 | Active sessions sensor | Count and `sessions` attribute for local unexpired grants; `controller_confirmed: false`. |
 | Portal online | Dedicated local listener is running. |
 | Controller online | Most recent controller authentication/health check succeeded. |
 | `omada_guest_access.approve_request` | `request_id`, optional `duration_hours` (1–720). |
 | `omada_guest_access.deny_request` | `request_id`, optional guest-visible `reason` (up to 500 characters). |
-| `omada_guest_access.revoke_access` | Compatibility service: reports unsupported, never claims success. |
+| `omada_guest_access.revoke_access` | `request_id`; controller deauthentication with confirmation before local revocation. |
 
 Services accept administrator users and trusted HA automation/system contexts. User-initiated decisions persist `decision_user_id`; system decisions have no user ID. Events include `entry_id` for multi-site automation routing.
 
-Events: `omada_guest_access_request_created`, `omada_guest_access_request_approved`, `omada_guest_access_request_denied`, `omada_guest_access_request_expired`, `omada_guest_access_access_revoked` (reserved for a future supported adapter), and `omada_guest_access_omada_api_error`.
+Events: `omada_guest_access_request_created`, `omada_guest_access_request_approved`, `omada_guest_access_request_denied`, `omada_guest_access_request_expired`, `omada_guest_access_access_revoked`, and `omada_guest_access_omada_api_error`.
 
 See [examples/actionable-notifications.yaml](examples/actionable-notifications.yaml) for a mobile approval automation. Restrict its notifications to a trusted administrator's phone.
 
@@ -146,6 +220,14 @@ recorder:
 ```
 
 Guest responses exclude other guests, internal controller context and credentials. Guest pages/status/errors use `Cache-Control: no-store`; the portal disables its own access log. Configure reverse-proxy logging accordingly: the initial query contains MAC addresses and connection details.
+
+## Upgrade notes for 1.3.0
+
+- Update/redownload through HACS and restart Home Assistant.
+- **Change the existing resource URL** to `/omada_guest_access/omada-guest-access-card.js?v=1.3.0` (do not add a duplicate), then reload the dashboard/browser. The new editor and history fix require the new JavaScript; a cached 1.2.0 resource will keep the old behavior.
+- Edit the card to use the visual editor. Existing YAML works unchanged; visibility options default to the previous layout. Clear any `duration_hours` override to follow integration defaults. Configure durations and portal customization under integration options.
+- Adds controller-backed cancellation via Hotspot Manager, configurable approval presets (1h–1 week), header/footer HTML, custom CSS, and sandboxed Jinja page templates.
+- Fixes history disclosures closing on HA updates. Adds visual configuration, same-entry entity suggestions, visibility switches, compact spacing, and configurable history page size. Active sensor attributes now include the integration entry ID to pair the suggested sensors reliably.
 
 ## Upgrade notes for 1.2.3
 
@@ -203,6 +285,6 @@ Before production, check your specific controller and guest devices:
 3. HA approval causes actual internet access; denial keeps access blocked.
 4. Controller-enforced access expiry, including across HA restart/outage.
 5. iOS/Android captive-portal browser behavior and proxy/VLAN reachability.
-6. End access manually in Omada and confirm traffic stops. The local grant remains until its recorded deadline, because this adapter cannot reconcile controller state.
+6. Use **Cancel access** on a test guest and confirm internet traffic stops and the Omada record is inactive. Verify operator permissions; no live deauthentication has been performed by the test suite. Manual controller changes still are not continuously reconciled into the local grant list.
 
 GitHub Actions runs HACS validation, hassfest, Ruff, the Python test suite, and the Chromium browser smoke test (mocked HA/controller traffic).

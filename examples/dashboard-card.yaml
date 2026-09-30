@@ -1,8 +1,27 @@
 # Add this resource first as a JavaScript module in Settings > Dashboards > Resources:
-# /omada_guest_access/omada-guest-access-card.js?v=1.2.0
+# /omada_guest_access/omada-guest-access-card.js?v=1.3.0
 # Then paste this into a Manual card. Use the entity IDs from your integration.
 type: custom:omada-guest-access-card
 pending_entity: sensor.pending_requests
 active_entity: sensor.active_sessions
-duration_hours: 8
+# duration_hours: 8  # optional override; omit to use the integration default
 title: Guest Wi-Fi
+
+# All options below are also available in the visual editor.
+# Defaults preserve the full card; set any show_* option to false to hide it.
+history_page_size: 20
+show_title: true
+show_pending: true
+show_active: true
+show_history: true
+show_notes: true
+show_mac: true
+show_timestamps: true
+show_actions: true
+show_duration_selector: true
+show_notices: true
+show_empty: true
+show_history_details: true
+show_decision_user: true
+show_terms: true
+compact: false

@@ -195,7 +195,7 @@ async def test_custom_portal_text_is_escaped_and_no_terms_by_default(hass, coord
     client = await aiohttp_client(GuestPortal(hass, coordinator, 0).create_app())
     response = await client.get("/", params=QUERY)
     text = await response.text()
-    assert "Sam&#x27;s &lt;Guest&gt; Wi-Fi" in text
+    assert "Sam&#39;s &lt;Guest&gt; Wi-Fi" in text
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in text
     assert "&lt;img src=x onerror=alert(1)&gt; $title" in text
     assert "background:#123ABC" in text
@@ -335,3 +335,19 @@ async def test_recovery_at_capacity_does_not_extend_session(
     assert portal._sessions[token]["expires_at"] == deadline
     assert int(response.cookies["omada_guest_portal"]["max-age"]) <= 15 * 60
     assert (await client.get("/", params=QUERY)).status == 503
+
+
+async def test_custom_template_over_http(hass, coordinator, aiohttp_client, socket_enabled):
+    from custom_components.omada_guest_access.portal_render import DEFAULT_TEMPLATE
+
+    coordinator.config.update(portal_template=DEFAULT_TEMPLATE, portal_header="<h2>Our home</h2>",
+                              portal_footer="<p>Ask your host</p>", portal_css="body{color:navy}")
+    client = await aiohttp_client(GuestPortal(hass, coordinator, 0).create_app())
+    response = await client.get("/", params=QUERY)
+    assert response.status == 200
+    assert "<h2>Our home</h2>" in await response.text()
+    assert "img-src 'self' data:" in response.headers["Content-Security-Policy"]
+    coordinator.config["portal_template"] = "{{ missing_secret }}"
+    response = await client.get("/", params=QUERY)
+    assert response.status == 503
+    assert "missing_secret" not in await response.text()

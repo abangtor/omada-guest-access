@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{{ title }}</title>
+  {{ style_html }}
+  <style>
+    body { max-width: 640px; background: #f4f7fb; }
+    main { background: white; border-radius: 16px; padding: 24px; }
+    header, footer { text-align: center; margin: 20px 0; }
+  </style>
+</head>
+<body>
+  <header>{{ header_html }}</header>
+  <main>
+    <h1>{{ title }}</h1>
+    <p>{{ message }}</p>
+    {% if request_id %}<small>Your request is being restored.</small>{% endif %}
+    {{ form_html }}
+    {{ status_html }}
+  </main>
+  <footer>{{ footer_html }}</footer>
+  {{ script_html }}
+</body>
+</html>

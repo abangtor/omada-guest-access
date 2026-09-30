@@ -1,0 +1,78 @@
+"""Portal layout templates never receive HA objects or credentials."""
+
+import pytest
+
+from custom_components.omada_guest_access.portal_render import (
+    DEFAULT_TEMPLATE,
+    PortalTemplateError,
+    _page,
+    validate_template,
+)
+from custom_components.omada_guest_access.settings import parse_duration_options
+
+
+def test_custom_header_footer_and_css():
+    page = _page(
+        "token",
+        {
+            "portal_header": "<b>Welcome</b>",
+            "portal_footer": "<p>Contact reception</p>",
+            "portal_css": "body{background:#eeeeee}",
+            "portal_title": "<script>bad()</script>",
+        },
+    )
+    assert "<header><b>Welcome</b></header>" in page
+    assert "<footer><p>Contact reception</p></footer>" in page
+    assert "body{background:#eeeeee}" in page
+    assert "&lt;script&gt;bad()&lt;/script&gt;" in page
+
+
+def test_full_template_has_working_fragments_and_no_secrets():
+    config = {
+        "password": "never-disclose",
+        "controller_url": "private-controller",
+        "portal_title": "Welcome!",
+        "portal_template": "<html><head>{{ style_html }}</head><body><aside>{{ title }}</aside>"
+        "{{ form_html }}{{ status_html }}{{ script_html }}</body></html>",
+    }
+    page = _page("session-token", config, "request-id")
+    assert "<aside>Welcome!</aside>" in page
+    assert "id='request' hidden" in page
+    assert "nonce='session-token'" in page
+    assert "private-controller" not in page
+    assert "never-disclose" not in page
+    validate_template(config)
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "{{",
+        "{{ states('sensor.secret') }}",
+        "{{ config.password }}",
+        "{{ ''.__class__.__mro__ }}",
+        "{{ cycler.__init__.__globals__ }}",
+        "<html>No form</html>",
+        "{{ form_html }}{{ form_html }}{{ status_html }}{{ script_html }}",
+        "{% if request_id %}missing{% else %}" + DEFAULT_TEMPLATE + "{% endif %}",
+    ],
+)
+def test_invalid_templates_rejected(source):
+    with pytest.raises(PortalTemplateError):
+        validate_template({"portal_template": source})
+
+
+def test_css_cannot_close_style_tag():
+    page = _page("token", {"portal_css": "</style><script>alert(1)</script>"})
+    assert "</style><script>alert" not in page
+    assert "\\3c /style>" in page
+
+
+@pytest.mark.parametrize("value", ["", "0", "169", "1,8,200", "1.5", "1,,8", "True", [1, 8], "１"])
+def test_invalid_duration_options(value):
+    with pytest.raises(ValueError):
+        parse_duration_options(value)
+
+
+def test_duration_options_order_and_duplicates():
+    assert parse_duration_options("168, 8, 1,8,24") == [1, 8, 24, 168]

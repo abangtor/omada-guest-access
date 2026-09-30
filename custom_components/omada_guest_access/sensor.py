@@ -9,7 +9,9 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
+from .const import CONF_DEFAULT_DURATION, CONF_DURATION_OPTIONS, DEFAULT_DURATION_HOURS, DEFAULT_DURATION_OPTIONS
 from .coordinator import OmadaGuestAccessCoordinator
+from .settings import parse_duration_options
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
@@ -42,9 +44,13 @@ class PendingRequestsSensor(_BaseSensor):
         """Expose the actionable pending queue for dashboard templates/cards."""
         return {
             "entry_id": self.coordinator.entry.entry_id,
+            "default_duration": self.coordinator.config.get(CONF_DEFAULT_DURATION, DEFAULT_DURATION_HOURS),
+            "duration_options": parse_duration_options(
+                self.coordinator.config.get(CONF_DURATION_OPTIONS, DEFAULT_DURATION_OPTIONS)
+            ),
             "requests": [
                 _request_summary(item) for item in self.coordinator.requests.values() if item["status"] == "pending"
-            ]
+            ],
         }
 
 
@@ -66,6 +72,7 @@ class ActiveSessionsSensor(_BaseSensor):
         """Expose currently authorized sessions for dashboard templates/cards."""
         now = dt_util.utcnow()
         return {
+            "entry_id": self.coordinator.entry.entry_id,
             "sessions": [
                 _request_summary(item)
                 for item in self.coordinator.requests.values()

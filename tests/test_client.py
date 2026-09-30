@@ -98,11 +98,12 @@ async def test_login_failure(hass, config, body, status, error, aiohttp_server, 
         await client.async_close()
 
 
-async def test_revoke_does_not_issue_undocumented_api_call(hass, config, context):
+async def test_disabled_revoke_does_not_issue_api_call(hass, config, context):
+    config["enable_revoke"] = False
     client = OmadaExternalPortalClient(hass, config)
     try:
         with patch.object(client._session, "post") as post:
-            with pytest.raises(OmadaApiError, match="not supported"):
+            with pytest.raises(OmadaApiError, match="disabled"):
                 await client.async_revoke(context)
             post.assert_not_called()
     finally:

@@ -27,7 +27,7 @@ deny_request:
         text:
 revoke_access:
   name: Revoke guest access
-  description: Not supported by the External Portal API. Use Omada Hotspot Manager to end access early; this service reports an error without changing the grant.
+  description: Cancel guest internet authorization through the Hotspot Manager web API. Requires operator client-management permission. Marks the request revoked only after controller confirmation.
   fields:
     request_id:
       required: true

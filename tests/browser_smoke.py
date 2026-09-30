@@ -13,9 +13,11 @@ import argparse
 import asyncio
 from pathlib import Path
 
+from browser_card import check_card
 from playwright.async_api import async_playwright
 
 from custom_components.omada_guest_access.portal import _page
+from custom_components.omada_guest_access.portal_render import DEFAULT_TEMPLATE
 
 
 async def main(executable: str | None) -> None:
@@ -23,6 +25,7 @@ async def main(executable: str | None) -> None:
         browser = await playwright.chromium.launch(executable_path=executable, args=["--no-sandbox"])
         try:
             page = await browser.new_page()
+            page.set_default_timeout(8000)
             errors = []
             page.on("pageerror", lambda error: errors.append(str(error)))
             card_path = (
@@ -96,6 +99,8 @@ async def main(executable: str | None) -> None:
             assert await page.get_by_role("button", name="Show history", exact=True).count() == 0
             assert await page.get_by_role("button", name="Approve 4h").is_disabled()
 
+            await check_card(page)
+
             submissions = []
             guest_status = "pending"
 
@@ -114,6 +119,10 @@ async def main(executable: str | None) -> None:
                             "testtoken",
                             {
                                 "portal_title": "Garden Guest Wi-Fi",
+                                "portal_header": "<b>Welcome to the garden</b>",
+                                "portal_footer": "<p>Contact your host for help</p>",
+                                "portal_css": "body{background:rgb(240, 245, 250)}",
+                                "portal_template": DEFAULT_TEMPLATE.replace("<main>", '<main class="custom-layout">'),
                                 "portal_message": "Welcome <friends>",
                                 "require_terms": True,
                                 "terms_text": "Be kind. <script>bad()</script>",
@@ -124,6 +133,10 @@ async def main(executable: str | None) -> None:
 
             await page.route("https://guest.example.com/**", route)
             await page.goto("https://guest.example.com/")
+            await page.get_by_text("Welcome to the garden", exact=True).wait_for()
+            await page.get_by_text("Contact your host for help", exact=True).wait_for()
+            assert await page.locator("main.custom-layout").count() == 1
+            assert await page.locator("body").evaluate("el => getComputedStyle(el).backgroundColor") == "rgb(240, 245, 250)"
             await page.get_by_label("Your name").fill("Alex")
             await page.get_by_label("Optional note").fill("Visiting Sam\nArriving at 7pm")
             assert await page.locator("textarea[name=note]").count() == 1
@@ -146,6 +159,9 @@ async def main(executable: str | None) -> None:
             await page.reload()
             await page.get_by_text("Access was denied.", exact=True).wait_for()
             assert await page.locator("form").is_hidden()
+            guest_status = "revoked"
+            await page.reload()
+            await page.get_by_text("Your internet access has been cancelled.", exact=True).wait_for()
             assert submissions == [{"guest_name": "Alex", "note": "Visiting Sam\nArriving at 7pm", "terms_accepted": True}]
             assert not errors, errors
             print(

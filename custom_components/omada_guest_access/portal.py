@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-import json
 import re
 from collections import defaultdict, deque
 from datetime import timedelta
-from html import escape
 from ipaddress import ip_address, ip_network
-from string import Template
 from typing import Any
 from urllib.parse import urlsplit
 from uuid import uuid4
@@ -20,18 +17,10 @@ from homeassistant.util import dt as dt_util
 from .const import (
     CONF_ALLOWED_NETWORKS,
     CONF_PENDING_TIMEOUT,
-    CONF_PORTAL_ACCENT,
-    CONF_PORTAL_MESSAGE,
-    CONF_PORTAL_TITLE,
     CONF_PORTAL_URL,
-    CONF_REQUIRE_TERMS,
     CONF_SITE,
-    CONF_TERMS_TEXT,
     CONF_TRUSTED_PROXIES,
     DEFAULT_PENDING_TIMEOUT_MINUTES,
-    DEFAULT_PORTAL_ACCENT,
-    DEFAULT_PORTAL_MESSAGE,
-    DEFAULT_PORTAL_TITLE,
     PORTAL_MAX_SESSIONS,
     PORTAL_RATE_LIMIT,
     PORTAL_RATE_WINDOW_SECONDS,
@@ -39,6 +28,7 @@ from .const import (
 )
 from .coordinator import OmadaGuestAccessCoordinator
 from .omada_client import PortalContext
+from .portal_render import PortalTemplateError, _page
 
 _SESSION_COOKIE = "omada_guest_portal"
 
@@ -144,12 +134,18 @@ class GuestPortal:
             }
         if session["request_id"] not in self.coordinator.requests:
             session["request_id"] = None
+        try:
+            page = await self.hass.async_add_executor_job(
+                _page, session_id, self.coordinator.config, session["request_id"]
+            )
+        except PortalTemplateError:
+            raise web.HTTPServiceUnavailable(text="Portal template is invalid. Please contact your host.") from None
         response = web.Response(
-            text=_page(session_id, self.coordinator.config, session["request_id"]),
+            text=page,
             content_type="text/html",
             headers={
                 "Content-Security-Policy": f"default-src 'none'; script-src 'nonce-{session_id}'; "
-                "style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+                "style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
             },
         )
         public_url = self.coordinator.config.get(CONF_PORTAL_URL) or str(request.url)
@@ -325,55 +321,3 @@ def _public_request(item: dict[str, Any], context: PortalContext) -> dict[str, A
 def parse_networks(value: str) -> list:
     """Parse comma-separated IP addresses/CIDRs shared with the options flow."""
     return [ip_network(part.strip(), strict=False) for part in value.split(",") if part.strip()]
-
-
-def _page(
-    session_id: str, config: dict[str, Any] | None = None, request_id: str | None = None
-) -> str:
-    config = config or {}
-    terms = config.get(CONF_TERMS_TEXT, "").strip()
-    terms_html = ""
-    if terms:
-        terms_html = (
-            "<details id='terms' open><summary>Guest Wi-Fi terms</summary><p>" + escape(terms) + "</p></details>"
-        )
-    if config.get(CONF_REQUIRE_TERMS):
-        terms_html += "<label class='consent'><input type='checkbox' name='terms_accepted' required> I agree to the guest Wi-Fi terms.</label>"
-    accent = config.get(CONF_PORTAL_ACCENT, DEFAULT_PORTAL_ACCENT)
-    if not re.fullmatch(r"#[0-9a-fA-F]{6}", accent):
-        accent = DEFAULT_PORTAL_ACCENT
-    return Template(_PAGE).substitute(
-        token=json.dumps(session_id),
-        request_id=json.dumps(request_id),
-        form_hidden=" hidden" if request_id else "",
-        nonce=escape(session_id, quote=True),
-        title=escape(config.get(CONF_PORTAL_TITLE, DEFAULT_PORTAL_TITLE)),
-        message=escape(config.get(CONF_PORTAL_MESSAGE, DEFAULT_PORTAL_MESSAGE)),
-        accent=accent,
-        terms=terms_html,
-    )
-
-
-_PAGE = """<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
-<title>$title</title><style>
-body{font-family:system-ui;max-width:440px;margin:8vh auto;padding:1rem;color:#15202b;background:#fff}
-input,textarea,button{box-sizing:border-box;width:100%;padding:.8rem;margin:.4rem 0}
-textarea{min-height:6rem;resize:vertical;font:inherit}
-button{background:$accent;color:#fff;border:0;border-radius:.3rem;font:inherit;cursor:pointer}
-button:disabled{opacity:.6;cursor:wait}input[type=checkbox]{width:auto;margin-right:.5rem}
-#status{margin-top:1rem}#terms{margin:1rem 0}p{white-space:pre-wrap;overflow-wrap:anywhere}
-.consent{display:block;margin:1rem 0}small{color:#52606d}
-</style></head><body>
-<h1>$title</h1><p>$message</p><form id='request'$form_hidden>
-<label>Your name<input name='guest_name' required maxlength='120' autocomplete='name'></label>
-<label>Optional note<textarea name='note' maxlength='500' rows='4'></textarea></label>$terms
-<button>Request access</button></form><p id='status' role='status' aria-live='polite'></p><script nonce='$nonce'>
-const token=$token,f=document.querySelector('form'),s=document.querySelector('#status');let id=$request_id,timer;
-async function api(path,opts={}){let r=await fetch(path,{...opts,headers:{'Content-Type':'application/json','X-Portal-Token':token,...(opts.headers||{})}});if(!r.ok)throw new Error();return r.json()}
-async function poll(){try{let x=await api('/api/request/'+id);if(x.status==='pending'){s.textContent='Request sent. Waiting for approval…';return;}clearInterval(timer);if(x.status==='approved'){s.textContent='Access approved. You can now use the internet.';if(x.redirect_url)location.assign(x.redirect_url)}else if(x.status==='denied')s.textContent=x.denial_reason||'Access was denied.';else s.textContent='This request has expired.'}catch(_){clearInterval(timer);s.textContent='Your portal session expired. Please reconnect to Guest Wi-Fi.'}}
-f.onsubmit=async e=>{e.preventDefault();const button=f.querySelector('button');button.disabled=true;
-try{const body=Object.fromEntries(new FormData(f));if(f.elements.terms_accepted)body.terms_accepted=f.elements.terms_accepted.checked;
-let x=await api('/api/request',{method:'POST',body:JSON.stringify(body)});id=x.request_id;f.hidden=true;s.textContent='Request sent. Waiting for approval…';timer=setInterval(poll,3000);await poll()}
-catch(_){s.textContent='Unable to send your request. Please reconnect and try again.'}finally{button.disabled=false}};
-if(id){f.hidden=true;s.textContent='Restoring your request…';timer=setInterval(poll,3000);poll();}
-</script></body></html>"""

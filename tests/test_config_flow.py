@@ -219,28 +219,83 @@ async def test_auth_error_form_loads_over_http(flow_http, config, flow_client):
     assert (await response.json())["errors"] == {"base": "invalid_auth"}
 
 
-@pytest.mark.parametrize('kind,expected', [('tls', 'tls_error'), ('network', 'cannot_connect')])
+@pytest.mark.parametrize("kind,expected", [("tls", "tls_error"), ("network", "cannot_connect")])
 async def test_connection_errors_are_not_reported_as_bad_credentials(hass, config, flow_client, kind, expected):
     from custom_components.omada_guest_access.omada_client import OmadaApiError, OmadaTlsError
 
-    error_type = OmadaTlsError if kind == 'tls' else OmadaApiError
-    flow_client.async_test_connection.side_effect = error_type('connection failed')
+    error_type = OmadaTlsError if kind == "tls" else OmadaApiError
+    flow_client.async_test_connection.side_effect = error_type("connection failed")
     result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={'source': config_entries.SOURCE_USER}, data=config
+        DOMAIN, context={"source": config_entries.SOURCE_USER}, data=config
     )
-    assert result['type'] is FlowResultType.FORM
-    assert result['errors'] == {'base': expected}
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": expected}
     flow_client.async_close.assert_awaited_once()
 
 
 async def test_api_error_details_reach_frontend(flow_http, config, flow_client):
     from custom_components.omada_guest_access.omada_client import OmadaApiError
 
-    flow_client.async_test_connection.side_effect = OmadaApiError('Omada API returned HTTP 404')
-    response = await flow_http.post('/api/config/config_entries/flow', json={'handler': DOMAIN})
-    flow_id = (await response.json())['flow_id']
-    response = await flow_http.post(f'/api/config/config_entries/flow/{flow_id}', json=config)
+    flow_client.async_test_connection.side_effect = OmadaApiError("Omada API returned HTTP 404")
+    response = await flow_http.post("/api/config/config_entries/flow", json={"handler": DOMAIN})
+    flow_id = (await response.json())["flow_id"]
+    response = await flow_http.post(f"/api/config/config_entries/flow/{flow_id}", json=config)
     assert response.status == 200
     result = await response.json()
-    assert result['errors'] == {'base': 'cannot_connect'}
-    assert result['description_placeholders'] == {'error_detail': 'Omada API returned HTTP 404'}
+    assert result["errors"] == {"base": "cannot_connect"}
+    assert result["description_placeholders"] == {"error_detail": "Omada API returned HTTP 404"}
+
+
+async def test_options_store_durations_and_template(hass, entry):
+    from custom_components.omada_guest_access.portal_render import DEFAULT_TEMPLATE
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    settings = {
+        "portal_port": 8088,
+        "default_duration": 8,
+        "pending_timeout": 15,
+        "retention_days": 30,
+        "duration_options": "1, 8, 24, 168",
+        "enable_revoke": True,
+        "portal_header": "<b>Welcome</b>",
+        "portal_footer": "<small>Contact us</small>",
+        "portal_css": "body{background:#eeeeee}",
+        "portal_template": DEFAULT_TEMPLATE,
+    }
+    result = await hass.config_entries.options.async_configure(result["flow_id"], user_input=settings)
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert all(entry.options[key] == value for key, value in settings.items())
+
+
+@pytest.mark.parametrize(
+    "settings",
+    [
+        {"duration_options": "0,169"},
+        {"portal_template": "{{ password }}"},
+        {"portal_template": "<html>No form</html>"},
+        {"portal_css": "x" * 20001},
+    ],
+)
+async def test_options_reject_invalid_extended_settings(hass, entry, settings):
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input={
+            "portal_port": 8088,
+            "default_duration": 8,
+            "pending_timeout": 15,
+            "retention_days": 30,
+            **settings,
+        },
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "invalid_template" if "portal_template" in settings else "invalid_config"}
+
+
+async def test_extended_options_are_serializable(entry, flow_http):
+    response = await flow_http.post("/api/config/config_entries/options/flow", json={"handler": entry.entry_id})
+    assert response.status == 200
+    fields = {field["name"]: field for field in (await response.json())["data_schema"]}
+    assert fields["portal_template"]["selector"]["text"]["multiline"]
+    assert "duration_options" in fields
+    assert "enable_revoke" in fields

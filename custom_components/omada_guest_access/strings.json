@@ -22,7 +22,13 @@
           "portal_message": "Welcome message (plain text)",
           "portal_accent": "Accent color (#RRGGBB)",
           "terms_text": "Guest Wi-Fi terms (plain text)",
-          "require_terms": "Require acceptance of guest Wi-Fi terms"
+          "require_terms": "Require acceptance of guest Wi-Fi terms",
+          "duration_options": "Approval dropdown presets (comma-separated hours, 1–168)",
+          "enable_revoke": "Enable guest deauthentication via Hotspot Manager web API",
+          "portal_header": "Portal header (HTML)",
+          "portal_footer": "Portal footer (HTML)",
+          "portal_css": "Custom portal CSS",
+          "portal_template": "Full portal Jinja template (blank: built-in layout)"
         }
       },
       "reauth_confirm": {
@@ -46,7 +52,13 @@
           "portal_message": "Welcome message (plain text)",
           "portal_accent": "Accent color (#RRGGBB)",
           "terms_text": "Guest Wi-Fi terms (plain text)",
-          "require_terms": "Require acceptance of guest Wi-Fi terms"
+          "require_terms": "Require acceptance of guest Wi-Fi terms",
+          "duration_options": "Approval dropdown presets (comma-separated hours, 1–168)",
+          "enable_revoke": "Enable guest deauthentication via Hotspot Manager web API",
+          "portal_header": "Portal header (HTML)",
+          "portal_footer": "Portal footer (HTML)",
+          "portal_css": "Custom portal CSS",
+          "portal_template": "Full portal Jinja template (blank: built-in layout)"
         }
       },
       "reconfigure": {
@@ -70,16 +82,23 @@
           "portal_message": "Welcome message (plain text)",
           "portal_accent": "Accent color (#RRGGBB)",
           "terms_text": "Guest Wi-Fi terms (plain text)",
-          "require_terms": "Require acceptance of guest Wi-Fi terms"
+          "require_terms": "Require acceptance of guest Wi-Fi terms",
+          "duration_options": "Approval dropdown presets (comma-separated hours, 1–168)",
+          "enable_revoke": "Enable guest deauthentication via Hotspot Manager web API",
+          "portal_header": "Portal header (HTML)",
+          "portal_footer": "Portal footer (HTML)",
+          "portal_css": "Custom portal CSS",
+          "portal_template": "Full portal Jinja template (blank: built-in layout)"
         }
       }
     },
     "error": {
       "cannot_connect": "Unable to communicate with the Omada External Portal API: {error_detail}. Check the Controller URL/ID and network connectivity from Home Assistant.",
       "invalid_auth": "Hotspot Operator login failed: {error_detail}.",
-      "invalid_config": "Check controller URL/ID, portal origin, IP/CIDR settings, and portal text. Accent must be #RRGGBB; required terms must not be blank. Title/message/terms limits: 80/500/4000 characters.",
+      "invalid_config": "Check controller URL/ID, portal origin, IP/CIDR settings, and portal text. Accent must be #RRGGBB; required terms must not be blank. Title/message/terms limits: 80/500/4000 characters. Duration presets must be whole hours from 1–168. HTML header/footer/CSS/template limits: 10000/10000/20000/50000 characters. Templates must contain form_html, status_html and script_html once each.",
       "port_in_use": "Another Omada Guest Access entry uses this port.",
-      "tls_error": "Unable to establish a verified TLS connection to the controller. For a trusted local controller using a self-signed certificate, disable Verify controller TLS certificate, or install a trusted certificate matching the controller hostname."
+      "tls_error": "Unable to establish a verified TLS connection to the controller. For a trusted local controller using a self-signed certificate, disable Verify controller TLS certificate, or install a trusted certificate matching the controller hostname.",
+      "invalid_template": "Invalid portal template: {error_detail}. Use the documented layout variables and include form_html, status_html and script_html exactly once."
     },
     "abort": {
       "already_configured": "This Omada controller is already configured.",
@@ -103,13 +122,20 @@
           "portal_message": "Welcome message (plain text)",
           "portal_accent": "Accent color (#RRGGBB)",
           "terms_text": "Guest Wi-Fi terms (plain text)",
-          "require_terms": "Require acceptance of guest Wi-Fi terms"
+          "require_terms": "Require acceptance of guest Wi-Fi terms",
+          "duration_options": "Approval dropdown presets (comma-separated hours, 1–168)",
+          "enable_revoke": "Enable guest deauthentication via Hotspot Manager web API",
+          "portal_header": "Portal header (HTML)",
+          "portal_footer": "Portal footer (HTML)",
+          "portal_css": "Custom portal CSS",
+          "portal_template": "Full portal Jinja template (blank: built-in layout)"
         }
       }
     },
     "error": {
-      "invalid_config": "Check controller URL/ID, portal origin, IP/CIDR settings, and portal text. Accent must be #RRGGBB; required terms must not be blank. Title/message/terms limits: 80/500/4000 characters.",
-      "port_in_use": "Another Omada Guest Access entry uses this port."
+      "invalid_config": "Check controller URL/ID, portal origin, IP/CIDR settings, and portal text. Accent must be #RRGGBB; required terms must not be blank. Title/message/terms limits: 80/500/4000 characters. Duration presets must be whole hours from 1–168. HTML header/footer/CSS/template limits: 10000/10000/20000/50000 characters. Templates must contain form_html, status_html and script_html once each.",
+      "port_in_use": "Another Omada Guest Access entry uses this port.",
+      "invalid_template": "Invalid portal template: {error_detail}. Use the documented layout variables and include form_html, status_html and script_html exactly once."
     }
   }
 }

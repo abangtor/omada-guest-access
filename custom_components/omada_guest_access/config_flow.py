@@ -16,11 +16,17 @@ from .const import (
     CONF_CONTROLLER_ID,
     CONF_CONTROLLER_URL,
     CONF_DEFAULT_DURATION,
+    CONF_DURATION_OPTIONS,
+    CONF_ENABLE_REVOKE,
     CONF_PASSWORD,
     CONF_PENDING_TIMEOUT,
     CONF_PORTAL_ACCENT,
+    CONF_PORTAL_CSS,
+    CONF_PORTAL_FOOTER,
+    CONF_PORTAL_HEADER,
     CONF_PORTAL_MESSAGE,
     CONF_PORTAL_PORT,
+    CONF_PORTAL_TEMPLATE,
     CONF_PORTAL_TITLE,
     CONF_PORTAL_URL,
     CONF_REQUIRE_TERMS,
@@ -31,6 +37,7 @@ from .const import (
     CONF_USERNAME,
     CONF_VERIFY_SSL,
     DEFAULT_DURATION_HOURS,
+    DEFAULT_DURATION_OPTIONS,
     DEFAULT_PENDING_TIMEOUT_MINUTES,
     DEFAULT_PORTAL_ACCENT,
     DEFAULT_PORTAL_MESSAGE,
@@ -48,6 +55,8 @@ from .omada_client import (
     normalize_controller_url,
 )
 from .portal import _safe_redirect_url, parse_networks
+from .portal_render import PortalTemplateError, validate_template
+from .settings import parse_duration_options
 
 
 class OmadaGuestAccessConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -78,7 +87,7 @@ class OmadaGuestAccessConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 values[CONF_CONTROLLER_URL], values[CONF_CONTROLLER_ID] = normalize_controller_url(
                     values[CONF_CONTROLLER_URL], values.get(CONF_CONTROLLER_ID, "")
                 )
-                validate_portal_settings(values)
+                await self.hass.async_add_executor_job(validate_portal_settings, values)
                 if port_in_use(self.hass, values[CONF_PORTAL_PORT], entry):
                     errors["portal_port"] = "port_in_use"
                 else:
@@ -91,6 +100,9 @@ class OmadaGuestAccessConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "tls_error"
             except OmadaApiError as err:
                 errors["base"] = "cannot_connect"
+                placeholders["error_detail"] = str(err)
+            except PortalTemplateError as err:
+                errors["base"] = "invalid_template"
                 placeholders["error_detail"] = str(err)
             except ValueError:
                 errors["base"] = "invalid_config"
@@ -130,10 +142,14 @@ class OmadaGuestAccessOptionsFlow(config_entries.OptionsFlow):
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         values = dict(self.config_entry.data) | dict(self.config_entry.options)
         errors = {}
+        placeholders = {}
         if user_input is not None:
             values.update(user_input)
             try:
-                validate_portal_settings(values)
+                await self.hass.async_add_executor_job(validate_portal_settings, values)
+            except PortalTemplateError as err:
+                errors["base"] = "invalid_template"
+                placeholders["error_detail"] = str(err)
             except ValueError:
                 errors["base"] = "invalid_config"
             if port_in_use(self.hass, values[CONF_PORTAL_PORT], self.config_entry):
@@ -142,6 +158,12 @@ class OmadaGuestAccessOptionsFlow(config_entries.OptionsFlow):
                 return self.async_create_entry(title="", data=user_input)
         fields = _data_schema(values).schema
         keys = {
+            CONF_DURATION_OPTIONS,
+            CONF_ENABLE_REVOKE,
+            CONF_PORTAL_HEADER,
+            CONF_PORTAL_FOOTER,
+            CONF_PORTAL_CSS,
+            CONF_PORTAL_TEMPLATE,
             CONF_PORTAL_URL,
             CONF_PORTAL_PORT,
             CONF_DEFAULT_DURATION,
@@ -156,14 +178,23 @@ class OmadaGuestAccessOptionsFlow(config_entries.OptionsFlow):
             CONF_REQUIRE_TERMS,
         }
         schema = vol.Schema({key: value for key, value in fields.items() if key.schema in keys})
-        return self.async_show_form(step_id="init", data_schema=schema, errors=errors)
+        return self.async_show_form(
+            step_id="init", data_schema=schema, errors=errors, description_placeholders=placeholders
+        )
 
 
 def validate_portal_settings(values: dict[str, Any]) -> None:
+    parse_duration_options(values.get(CONF_DURATION_OPTIONS, DEFAULT_DURATION_OPTIONS))
+    if not isinstance(values.get(CONF_ENABLE_REVOKE, True), bool):
+        raise ValueError("Enable revoke must be a boolean")
     for key, default, maximum in (
         (CONF_PORTAL_TITLE, DEFAULT_PORTAL_TITLE, 80),
         (CONF_PORTAL_MESSAGE, DEFAULT_PORTAL_MESSAGE, 500),
         (CONF_TERMS_TEXT, "", 4000),
+        (CONF_PORTAL_HEADER, "", 10000),
+        (CONF_PORTAL_FOOTER, "", 10000),
+        (CONF_PORTAL_CSS, "", 20000),
+        (CONF_PORTAL_TEMPLATE, "", 50000),
     ):
         value = values.get(key, default)
         if not isinstance(value, str) or len(value) > maximum:
@@ -176,6 +207,7 @@ def validate_portal_settings(values: dict[str, Any]) -> None:
         raise ValueError("Require terms must be a boolean")
     if values.get(CONF_REQUIRE_TERMS) and not values.get(CONF_TERMS_TEXT, "").strip():
         raise ValueError("Terms text is required when acceptance is mandatory")
+    validate_template(values)
     parse_networks(values.get(CONF_TRUSTED_PROXIES, ""))
     parse_networks(values.get(CONF_ALLOWED_NETWORKS, ""))
     url = values.get(CONF_PORTAL_URL, "")
@@ -209,6 +241,14 @@ def _data_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
     defaults = defaults or {}
     return vol.Schema(
         {
+            vol.Optional(
+                CONF_DURATION_OPTIONS, default=defaults.get(CONF_DURATION_OPTIONS, DEFAULT_DURATION_OPTIONS)
+            ): cv.string,
+            vol.Optional(CONF_ENABLE_REVOKE, default=defaults.get(CONF_ENABLE_REVOKE, True)): cv.boolean,
+            **{
+                vol.Optional(key, default=defaults.get(key, "")): TextSelector(TextSelectorConfig(multiline=True))
+                for key in (CONF_PORTAL_HEADER, CONF_PORTAL_FOOTER, CONF_PORTAL_CSS, CONF_PORTAL_TEMPLATE)
+            },
             vol.Optional(CONF_PORTAL_TITLE, default=defaults.get(CONF_PORTAL_TITLE, DEFAULT_PORTAL_TITLE)): vol.All(
                 cv.string, vol.Length(min=1, max=80)
             ),
