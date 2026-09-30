@@ -260,6 +260,20 @@ class OmadaGuestAccessCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._event(EVENT_ACCESS_REVOKED, item)
             return deepcopy(item)
 
+    async def async_forget_all_records(self) -> int:
+        """Delete local request history without changing Omada authorizations.
+
+        This is intentionally separate from deauthorization: records can be
+        stale when a guest was removed directly in Omada Hotspot Manager.
+        """
+        async with self._lock:
+            self._ensure_running()
+            count = len(self.requests)
+            self.requests.clear()
+            await self._async_save()
+            self._publish()
+            return count
+
     def _api_error(self, request_id: str, err: OmadaApiError) -> None:
         self.hass.bus.async_fire(
             EVENT_OMADA_API_ERROR, {"entry_id": self.entry.entry_id, "request_id": request_id, "error": str(err)}

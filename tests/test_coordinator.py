@@ -130,6 +130,27 @@ async def test_storage_failure_does_not_leave_phantom_request(coordinator, conte
     assert not coordinator.requests
 
 
+async def test_forget_all_records_only_clears_local_history(coordinator, context, hass_storage):
+    pending = await coordinator.async_create_request("Alex", context)
+    await coordinator.async_approve_request(pending["request_id"])
+    other_context = context.__class__(
+        client_mac="AA:BB:CC:DD:EE:00",
+        site=context.site,
+        gateway_mac=context.gateway_mac,
+        ap_mac=context.ap_mac,
+        ssid_name=context.ssid_name,
+        radio_id=context.radio_id,
+        vlan_id=context.vlan_id,
+        redirect_url=context.redirect_url,
+    )
+    await coordinator.async_create_request("Sam", other_context)
+
+    assert await coordinator.async_forget_all_records() == 2
+    assert not coordinator.requests
+    assert hass_storage[f"{STORAGE_KEY}.{coordinator.entry.entry_id}"]["data"]["requests"] == {}
+    coordinator.client.async_revoke.assert_not_called()
+
+
 @pytest.mark.parametrize("duration", [0, -1, 721, True])
 async def test_invalid_duration_rejected_before_network(coordinator, context, duration):
     item = await coordinator.async_create_request("Alex", context)

@@ -71,7 +71,7 @@ async def test_full_ha_setup_static_resource_entities_and_reload(
     await hass.async_block_till_done()
     coordinator = entry.runtime_data
     resources = hass.data["lovelace"].resources
-    assert any(item["url"] == "/omada_guest_access/omada-guest-access-card.js?v=1.3.1"
+    assert any(item["url"] == "/omada_guest_access/omada-guest-access-card.js?v=1.3.2"
                and item["type"] == "module" for item in resources.async_items())
     response = await http.get("/omada_guest_access/omada-guest-access-card.js")
     assert response.status == 200

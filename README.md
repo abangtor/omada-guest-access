@@ -89,12 +89,15 @@ Open the integration's **Configure / Options** dialog:
 | Require acceptance | Off; requires nonblank terms when enabled |
 | Custom portal CSS | Empty; up to 20,000 characters |
 | Full portal Jinja template | Empty uses the built-in layout; up to 50,000 characters |
+| Forget all local guest records | Off; one-time removal of local requests, sessions, and history |
 
 Title, message, and terms remain escaped plain text. Everything can be served locally: no external fonts, images, or scripts are needed before authorization. Choose an accent with sufficient contrast against white button text.
 
 When acceptance is required, both the browser form and server enforce it before creating a request. The server records its own timestamp, the SHA-256 hash of the displayed terms (UTF-8, outer whitespace trimmed), and a snapshot of that text. Browser-supplied timestamps, hashes, and terms text are ignored. Informational terms without mandatory acceptance do **not** create a consent record.
 
 Saving options reloads the listener: guests with an open page should reconnect. Changes apply to new requests; existing requests retain their original consent (or lack of consent). They are not silently re-consented or automatically revoked. This is a self-reported acceptance record, not verification of a guest's legal identity.
+
+Use **Forget all local guest records** when you have removed guests directly in Omada Hotspot Manager and want HA's request/session list to start fresh. It clears only this integration's local request records, active-session list, and history. It **does not** disconnect anyone in Omada, alter controller credentials/settings, or clear names/notes saved in a guest's browser. The checkbox is a one-time action and is not retained after saving.
 
 ### Full-page Jinja layouts
 
@@ -240,6 +243,10 @@ recorder:
 ```
 
 Guest responses exclude other guests, internal controller context and credentials. Guest pages/status/errors use `Cache-Control: no-store`; the portal disables its own access log. Configure reverse-proxy logging accordingly: the initial query contains MAC addresses and connection details.
+
+## Upgrade notes for 1.3.2
+
+- In **Settings → Devices & services → Omada Guest Access → Configure**, check **Forget all local guest records** and save to remove stale local records after manual Hotspot Manager changes. This does not deauthenticate Omada guests.
 
 ## Upgrade notes for 1.3.1
 

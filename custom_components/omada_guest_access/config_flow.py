@@ -18,6 +18,7 @@ from .const import (
     CONF_DEFAULT_DURATION,
     CONF_DURATION_OPTIONS,
     CONF_ENABLE_REVOKE,
+    CONF_FORGET_ALL_RECORDS,
     CONF_PASSWORD,
     CONF_PENDING_TIMEOUT,
     CONF_PORTAL_ACCENT,
@@ -142,6 +143,8 @@ class OmadaGuestAccessOptionsFlow(config_entries.OptionsFlow):
         errors = {}
         placeholders = {}
         if user_input is not None:
+            user_input = dict(user_input)
+            forget_all_records = user_input.pop(CONF_FORGET_ALL_RECORDS, False)
             values.update(user_input)
             try:
                 await self.hass.async_add_executor_job(validate_portal_settings, values)
@@ -153,6 +156,8 @@ class OmadaGuestAccessOptionsFlow(config_entries.OptionsFlow):
             if port_in_use(self.hass, values[CONF_PORTAL_PORT], self.config_entry):
                 errors["portal_port"] = "port_in_use"
             if not errors:
+                if forget_all_records:
+                    await self.config_entry.runtime_data.async_forget_all_records()
                 return self.async_create_entry(title="", data=user_input)
         fields = _data_schema(values).schema
         keys = {
@@ -172,8 +177,12 @@ class OmadaGuestAccessOptionsFlow(config_entries.OptionsFlow):
             CONF_PORTAL_ACCENT,
             CONF_TERMS_TEXT,
             CONF_REQUIRE_TERMS,
+            CONF_FORGET_ALL_RECORDS,
         }
         schema = vol.Schema({key: value for key, value in fields.items() if key.schema in keys})
+        schema = schema.extend(
+            {vol.Optional(CONF_FORGET_ALL_RECORDS, default=False): cv.boolean}
+        )
         return self.async_show_form(
             step_id="init", data_schema=schema, errors=errors, description_placeholders=placeholders
         )
