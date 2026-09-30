@@ -9,12 +9,19 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import config_validation as cv
-from homeassistant.helpers.selector import TextSelector, TextSelectorConfig
+from homeassistant.helpers.selector import (
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
+    TextSelector,
+    TextSelectorConfig,
+)
 
 from .const import (
     CONF_ALLOWED_NETWORKS,
     CONF_CONTROLLER_ID,
     CONF_CONTROLLER_URL,
+    CONF_DECISION_USER_IDS,
     CONF_DEFAULT_DURATION,
     CONF_DURATION_OPTIONS,
     CONF_ENABLE_REVOKE,
@@ -178,10 +185,17 @@ class OmadaGuestAccessOptionsFlow(config_entries.OptionsFlow):
             CONF_TERMS_TEXT,
             CONF_REQUIRE_TERMS,
             CONF_FORGET_ALL_RECORDS,
+            CONF_DECISION_USER_IDS,
         }
         schema = vol.Schema({key: value for key, value in fields.items() if key.schema in keys})
         schema = schema.extend(
-            {vol.Optional(CONF_FORGET_ALL_RECORDS, default=False): cv.boolean}
+            {
+                vol.Optional(CONF_FORGET_ALL_RECORDS, default=False): cv.boolean,
+                vol.Optional(
+                    CONF_DECISION_USER_IDS,
+                    default=_configured_decision_users(values),
+                ): await _decision_user_selector(self.hass),
+            }
         )
         return self.async_show_form(
             step_id="init", data_schema=schema, errors=errors, description_placeholders=placeholders
@@ -192,6 +206,9 @@ def validate_portal_settings(values: dict[str, Any]) -> None:
     parse_duration_options(values.get(CONF_DURATION_OPTIONS, DEFAULT_DURATION_OPTIONS))
     if not isinstance(values.get(CONF_ENABLE_REVOKE, True), bool):
         raise ValueError("Enable revoke must be a boolean")
+    decision_users = values.get(CONF_DECISION_USER_IDS, [])
+    if not isinstance(decision_users, list) or not all(isinstance(user_id, str) and user_id for user_id in decision_users):
+        raise ValueError("Decision users must be a list of Home Assistant user IDs")
     for key, default, maximum in (
         (CONF_PORTAL_TITLE, DEFAULT_PORTAL_TITLE, 80),
         (CONF_PORTAL_MESSAGE, DEFAULT_PORTAL_MESSAGE, 500),
@@ -238,6 +255,24 @@ def _identity(entry) -> str | None:
         return f"{origin}/{identifier}:{entry.data[CONF_SITE]}"
     except (KeyError, ValueError):
         return None
+
+
+def _configured_decision_users(values: dict[str, Any]) -> list[str]:
+    """Return a safe list for old entries and malformed hand-edited options."""
+    users = values.get(CONF_DECISION_USER_IDS, [])
+    return list(users) if isinstance(users, list) and all(isinstance(user_id, str) for user_id in users) else []
+
+
+async def _decision_user_selector(hass) -> SelectSelector:
+    """Build the visual multi-user picker from active HA users."""
+    options = [
+        {"value": user.id, "label": user.name or user.id}
+        for user in await hass.auth.async_get_users()
+        if user.is_active and not user.system_generated
+    ]
+    return SelectSelector(
+        SelectSelectorConfig(options=options, multiple=True, mode=SelectSelectorMode.DROPDOWN)
+    )
 
 
 def _data_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:

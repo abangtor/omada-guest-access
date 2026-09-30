@@ -175,7 +175,8 @@ class OmadaGuestAccessCard extends HTMLElement {
       return;
     }
     const admin = this._hass.user?.is_admin === true;
-    if (!admin && this._config.show_notices) this._node('p', 'Only Home Assistant administrators can make access decisions.', card);
+    const canDecide = admin || (pending.attributes.decision_user_ids || []).includes(this._hass.user?.id);
+    if (!canDecide && this._config.show_notices) this._node('p', 'You do not have permission to make guest access decisions.', card);
     const requests = pending.attributes.requests || [];
     const configuredDefault = pending.attributes.default_duration;
     const defaultHours = this._config.duration_hours ??
@@ -196,7 +197,7 @@ class OmadaGuestAccessCard extends HTMLElement {
         if (this._config.show_actions) {
           const actions = this._node('div', undefined, row); actions.className = 'actions';
           this._button(actions, defaultHours === 0 ? 'Approve forever' : `Approve ${defaultHours}h`, 'approve_request', item,
-            {duration_hours: defaultHours}, !admin);
+            {duration_hours: defaultHours}, !canDecide);
           if (this._config.show_duration_selector && presets.length) {
             const label = this._node('label', 'Duration', actions);
             const select = this._node('select', undefined, label);
@@ -210,12 +211,12 @@ class OmadaGuestAccessCard extends HTMLElement {
             const hours = presets.includes(selected) ? selected : presets.includes(defaultHours) ? defaultHours : presets[0];
             select.value = String(hours);
             this._selectedDurations.set(item.request_id, hours);
-            select.disabled = !admin || this._busy.has(item.request_id);
+            select.disabled = !canDecide || this._busy.has(item.request_id);
             select.onchange = () => this._selectedDurations.set(item.request_id, Number(select.value));
             this._button(actions, 'Approve', 'approve_request', item,
-              () => ({duration_hours: this._selectedDurations.get(item.request_id)}), !admin);
+              () => ({duration_hours: this._selectedDurations.get(item.request_id)}), !canDecide);
           }
-          this._button(actions, 'Deny', 'deny_request', item, {}, !admin);
+          this._button(actions, 'Deny', 'deny_request', item, {}, !canDecide);
         }
       }
     }
@@ -230,7 +231,7 @@ class OmadaGuestAccessCard extends HTMLElement {
         this._metadata(info, item.client_mac, item.access_expires_at, 'until');
         if (this._config.show_actions && active.attributes.revoke_supported) {
           const actions = this._node('div', undefined, row); actions.className = 'actions';
-          this._button(actions, 'Cancel access', 'revoke_access', item, {}, !admin);
+          this._button(actions, 'Cancel access', 'revoke_access', item, {}, !canDecide);
         }
       }
       if (this._config.show_notices && sessions.length && !active.attributes.revoke_supported) {

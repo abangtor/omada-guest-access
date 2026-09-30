@@ -9,7 +9,13 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
-from .const import CONF_DEFAULT_DURATION, CONF_DURATION_OPTIONS, DEFAULT_DURATION_HOURS, DEFAULT_DURATION_OPTIONS
+from .const import (
+    CONF_DECISION_USER_IDS,
+    CONF_DEFAULT_DURATION,
+    CONF_DURATION_OPTIONS,
+    DEFAULT_DURATION_HOURS,
+    DEFAULT_DURATION_OPTIONS,
+)
 from .coordinator import OmadaGuestAccessCoordinator
 from .settings import parse_duration_options
 
@@ -48,6 +54,8 @@ class PendingRequestsSensor(_BaseSensor):
             "duration_options": parse_duration_options(
                 self.coordinator.config.get(CONF_DURATION_OPTIONS, DEFAULT_DURATION_OPTIONS)
             ),
+            # Needed by the card to mirror the server-side access decision policy.
+            "decision_user_ids": self.coordinator.config.get(CONF_DECISION_USER_IDS, []),
             "requests": [
                 _request_summary(item) for item in self.coordinator.requests.values() if item["status"] == "pending"
             ],

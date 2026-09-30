@@ -40,6 +40,22 @@ async def test_non_admin_cannot_approve(hass, coordinator, context, hass_read_on
     coordinator.client.async_authorize.assert_not_called()
 
 
+async def test_selected_non_admin_can_decide(hass, coordinator, context, hass_read_only_user):
+    """Configured users may make decisions without being HA administrators."""
+    await async_register_services(hass)
+    coordinator.entry._async_set_state(hass, ConfigEntryState.LOADED, None)
+    coordinator.config["decision_user_ids"] = [hass_read_only_user.id]
+    item = await coordinator.async_create_request("Alex", context)
+    await hass.services.async_call(
+        DOMAIN,
+        "approve_request",
+        {"request_id": item["request_id"]},
+        blocking=True,
+        context=Context(user_id=hass_read_only_user.id),
+    )
+    assert coordinator.requests[item["request_id"]]["decision_user_id"] == hass_read_only_user.id
+
+
 async def test_automation_skips_unloaded_entries(hass, coordinator, context):
     await async_register_services(hass)
     unloaded = MockConfigEntry(domain=DOMAIN, data={}, title="Unloaded")

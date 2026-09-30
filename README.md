@@ -2,7 +2,7 @@
 
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
 
-A Home Assistant custom integration and separate captive portal for approval-based Omada guest Wi-Fi. Guests enter a name; an HA administrator reviews the request and approves a time-limited controller authorization or denies it.
+A Home Assistant custom integration and separate captive portal for approval-based Omada guest Wi-Fi. Guests enter a name; an HA administrator or selected HA user reviews the request and approves a time-limited controller authorization or denies it.
 
 **Status:** automated HA/HTTP tests cover the request flow. Live controller and phone captive-portal interoperability still need deployment testing. The adapter follows TP-Link's [External Portal Server protocol for Controller 5.0.15–6.2.0](https://support.omadanetworks.com/en/document/13080); this is not a claim that every controller/firmware combination has been tested.
 
@@ -89,6 +89,7 @@ Open the integration's **Configure / Options** dialog:
 | Require acceptance | Off; requires nonblank terms when enabled |
 | Custom portal CSS | Empty; up to 20,000 characters |
 | Full portal Jinja template | Empty uses the built-in layout; up to 50,000 characters |
+| Decision users | Empty; selected active HA users may approve, deny, and cancel access; administrators always retain access |
 | Forget all local guest records | Off; one-time removal of local requests, sessions, and history |
 
 Title, message, and terms remain escaped plain text. Everything can be served locally: no external fonts, images, or scripts are needed before authorization. Choose an accent with sufficient contrast against white button text.
@@ -154,7 +155,7 @@ title: Guest Wi-Fi
 # duration_hours: 8  # optional card override; omit to follow integration options
 ```
 
-Entity IDs may have suffixes if multiple sites/integrations are installed. Find them under the integration's entities. Only administrators see enabled approval controls. Errors are displayed in the card; grants show their scheduled expiry and a Cancel access button when deauthentication is enabled.
+Entity IDs may have suffixes if multiple sites/integrations are installed. Find them under the integration's entities. Administrators and users selected in integration options see enabled approval controls. Errors are displayed in the card; grants show their scheduled expiry and a Cancel access button when deauthentication is enabled.
 
 ### Visual editor and visibility
 
@@ -222,7 +223,7 @@ Omit `status` for all statuses. `query` is case-insensitive (maximum 120 charact
 | `omada_guest_access.deny_request` | `request_id`, optional guest-visible `reason` (up to 500 characters). |
 | `omada_guest_access.revoke_access` | `request_id`; controller deauthentication with confirmation before local revocation. |
 
-Services accept administrator users and trusted HA automation/system contexts. User-initiated decisions persist `decision_user_id`; system decisions have no user ID. Events include `entry_id` for multi-site automation routing.
+Services accept administrators, users selected in **Users allowed to approve, deny, or cancel guest access**, and trusted HA automation/system contexts. User-initiated decisions persist `decision_user_id`; system decisions have no user ID. Events include `entry_id` for multi-site automation routing.
 
 Events: `omada_guest_access_request_created`, `omada_guest_access_request_approved`, `omada_guest_access_request_denied`, `omada_guest_access_request_expired`, `omada_guest_access_access_revoked`, and `omada_guest_access_omada_api_error`.
 

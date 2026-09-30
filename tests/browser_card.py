@@ -184,7 +184,15 @@ async def check_card(page):
     await page.evaluate("mockHass.user.is_admin=false;card.hass=mockHass")
     assert await page.get_by_role("button", name="Cancel access", exact=True).is_disabled()
     assert await duration.is_disabled()
+    # A non-admin explicitly selected in the integration options may decide.
     await page.evaluate("""() => {
+      mockHass.states['sensor.pending'].attributes.decision_user_ids=[mockHass.user.id];
+      card.hass=mockHass;
+    }""")
+    assert not await page.get_by_role("button", name="Cancel access", exact=True).is_disabled()
+    assert not await duration.is_disabled()
+    await page.evaluate("""() => {
+      mockHass.states['sensor.pending'].attributes.decision_user_ids=[];
       mockHass.user.is_admin=true;card.hass=mockHass;
       mockHass.states['sensor.pending'].attributes.default_duration=12;
       card.setConfig({...integrationConfig,show_duration_selector:false});

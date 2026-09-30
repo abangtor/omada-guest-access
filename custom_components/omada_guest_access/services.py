@@ -1,13 +1,12 @@
-"""Admin-only guest decisions, including trusted HA automation contexts."""
+"""Guest decisions gated by configured Home Assistant users."""
 
 from __future__ import annotations
 
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import ServiceValidationError
+from homeassistant.exceptions import ServiceValidationError, Unauthorized
 from homeassistant.helpers import config_validation as cv
-from homeassistant.helpers.service import async_register_admin_service
 
 from .const import DOMAIN, SERVICE_APPROVE_REQUEST, SERVICE_DENY_REQUEST, SERVICE_REVOKE_ACCESS
 
@@ -31,6 +30,8 @@ async def async_register_services(hass: HomeAssistant) -> None:
         )
         if coordinator is None:
             raise ServiceValidationError("Unknown request or integration is not loaded")
+        if not await _can_decide(hass, coordinator.config.get("decision_user_ids", []), call):
+            raise Unauthorized(context=call.context, user_id=call.context.user_id)
         try:
             if call.service == SERVICE_APPROVE_REQUEST:
                 await coordinator.async_approve_request(
@@ -45,8 +46,7 @@ async def async_register_services(hass: HomeAssistant) -> None:
         except ValueError as err:
             raise ServiceValidationError(str(err)) from err
 
-    async_register_admin_service(
-        hass,
+    hass.services.async_register(
         DOMAIN,
         SERVICE_APPROVE_REQUEST,
         decide,
@@ -57,8 +57,7 @@ async def async_register_services(hass: HomeAssistant) -> None:
             }
         ),
     )
-    async_register_admin_service(
-        hass,
+    hass.services.async_register(
         DOMAIN,
         SERVICE_DENY_REQUEST,
         decide,
@@ -69,4 +68,19 @@ async def async_register_services(hass: HomeAssistant) -> None:
             }
         ),
     )
-    async_register_admin_service(hass, DOMAIN, SERVICE_REVOKE_ACCESS, decide, schema=vol.Schema(_REQUEST_ID_SCHEMA))
+    hass.services.async_register(DOMAIN, SERVICE_REVOKE_ACCESS, decide, schema=vol.Schema(_REQUEST_ID_SCHEMA))
+
+
+async def _can_decide(hass: HomeAssistant, allowed_user_ids: object, call: ServiceCall) -> bool:
+    """Allow administrators, selected active users, and trusted automations."""
+    if call.context.user_id is None:
+        return True
+    user = await hass.auth.async_get_user(call.context.user_id)
+    if user is not None and user.is_active and user.is_admin:
+        return True
+    return (
+        user is not None
+        and user.is_active
+        and isinstance(allowed_user_ids, list)
+        and call.context.user_id in allowed_user_ids
+    )
