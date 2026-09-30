@@ -59,7 +59,7 @@ DEFAULT_PORTAL_MESSAGE: Final = "Request internet access from your host."
 DEFAULT_PORTAL_ACCENT: Final = "#1769aa"
 
 CONF_DURATION_OPTIONS: Final = "duration_options"
-DEFAULT_DURATION_OPTIONS: Final = "1,2,4,8,12,24,48,72,168"
+DEFAULT_DURATION_OPTIONS: Final = "1,2,4,8,12,24,48,72,168,0"
 CONF_ENABLE_REVOKE: Final = "enable_revoke"
 CONF_PORTAL_CSS: Final = "portal_css"
 CONF_PORTAL_TEMPLATE: Final = "portal_template"

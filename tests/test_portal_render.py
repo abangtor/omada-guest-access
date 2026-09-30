@@ -68,7 +68,7 @@ def test_css_cannot_close_style_tag():
     assert "\\3c /style>" in page
 
 
-@pytest.mark.parametrize("value", ["", "0", "169", "1,8,200", "1.5", "1,,8", "True", [1, 8], "１"])
+@pytest.mark.parametrize("value", ["", "169", "1,8,200", "1.5", "1,,8", "True", [1, 8], "１"])
 def test_invalid_duration_options(value):
     with pytest.raises(ValueError):
         parse_duration_options(value)
@@ -76,6 +76,7 @@ def test_invalid_duration_options(value):
 
 def test_duration_options_order_and_duplicates():
     assert parse_duration_options("168, 8, 1,8,24") == [1, 8, 24, 168]
+    assert parse_duration_options("0, 8, 0") == [8, 0]
 
 
 def test_legacy_template_aliases_render_empty():

@@ -211,8 +211,8 @@ class OmadaGuestAccessCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if duration_hours is None
                 else duration_hours
             )
-            if not isinstance(duration, int) or isinstance(duration, bool) or not 1 <= duration <= 720:
-                raise ValueError("Access duration must be between 1 and 720 hours")
+            if not isinstance(duration, int) or isinstance(duration, bool) or not 0 <= duration <= 720:
+                raise ValueError("Access duration must be 0 (no expiry) or between 1 and 720 hours")
             try:
                 expires = await self.client.async_authorize(PortalContext(**item["portal_context"]), duration)
             except OmadaApiError as err:

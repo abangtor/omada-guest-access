@@ -53,7 +53,7 @@ async def async_register_services(hass: HomeAssistant) -> None:
         schema=vol.Schema(
             {
                 **_REQUEST_ID_SCHEMA,
-                vol.Optional("duration_hours"): vol.All(vol.Coerce(int), vol.Range(min=1, max=720)),
+                vol.Optional("duration_hours"): vol.All(vol.Coerce(int), vol.Range(min=0, max=720)),
             }
         ),
     )

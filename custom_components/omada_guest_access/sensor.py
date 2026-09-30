@@ -63,7 +63,7 @@ class ActiveSessionsSensor(_BaseSensor):
     def native_value(self) -> int:
         now = dt_util.utcnow()
         return sum(
-            item["status"] == "approved" and item.get("access_expires_at", now) > now
+            item["status"] == "approved" and (item.get("access_expires_at") is None or item["access_expires_at"] > now)
             for item in self.coordinator.requests.values()
         )
 
@@ -76,7 +76,7 @@ class ActiveSessionsSensor(_BaseSensor):
             "sessions": [
                 _request_summary(item)
                 for item in self.coordinator.requests.values()
-                if item["status"] == "approved" and item.get("access_expires_at", now) > now
+                if item["status"] == "approved" and (item.get("access_expires_at") is None or item["access_expires_at"] > now)
             ],
             "revoke_supported": self.coordinator.client.supports_revoke,
             "controller_confirmed": False,

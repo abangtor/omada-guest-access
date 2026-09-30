@@ -270,7 +270,7 @@ async def test_options_store_durations_and_template(hass, entry):
 @pytest.mark.parametrize(
     "settings",
     [
-        {"duration_options": "0,169"},
+        {"duration_options": "-1,169"},
         {"portal_template": "{{ password }}"},
         {"portal_template": "<html>No form</html>"},
         {"portal_css": "x" * 20001},

@@ -109,14 +109,17 @@ class OmadaExternalPortalClient:
         async with self._lock:
             await self._async_login()
 
-    async def async_authorize(self, context: PortalContext, duration_hours: int) -> datetime:
+    async def async_authorize(self, context: PortalContext, duration_hours: int) -> datetime | None:
         """Return the exact expiry sent to Omada, not a later local estimate."""
-        if not 1 <= duration_hours <= 720:
-            raise ValueError("Access duration must be between 1 and 720 hours")
+        if not 0 <= duration_hours <= 720:
+            raise ValueError("Access duration must be 0 (no expiry) or between 1 and 720 hours")
         async with self._lock:
             if not self._csrf_token:
                 await self._async_login()
-            expires = dt_util.utcnow() + timedelta(hours=duration_hours)
+            # Omada External Portal treats time=0 as no expiry. Keep the
+            # corresponding local record expiry empty so it remains active
+            # until explicitly cancelled in Omada or through this integration.
+            expires = None if duration_hours == 0 else dt_util.utcnow() + timedelta(hours=duration_hours)
             payload = _authorization_payload(context, duration_hours, expires=expires)
             try:
                 await self._async_raw_request("/hotspot/extPortal/auth", payload, csrf=True)
@@ -271,11 +274,14 @@ class OmadaExternalPortalClient:
 def _authorization_payload(
     context: PortalContext, duration_hours: int, *, expires: datetime | None = None
 ) -> dict[str, str | int]:
-    expires = expires or dt_util.utcnow() + timedelta(hours=duration_hours)
+    if duration_hours == 0:
+        expires = None
+    else:
+        expires = expires or dt_util.utcnow() + timedelta(hours=duration_hours)
     payload: dict[str, str | int] = {
         "clientMac": context.client_mac,
         "site": context.site,
-        "time": int(expires.timestamp() * 1_000_000),
+        "time": 0 if expires is None else int(expires.timestamp() * 1_000_000),
         "authType": 4,
     }
     if context.is_wireless:

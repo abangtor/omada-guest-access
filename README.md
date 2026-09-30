@@ -124,7 +124,7 @@ The Jinja environment is sandboxed and autoescaped. It receives **no HA state/fu
 In integration options, set:
 
 - **Default access duration:** `8` hours by default. Used by service calls with no duration and by cards without a duration override.
-- **Approval dropdown presets:** `1,2,4,8,12,24,48,72,168` by default. Any comma-separated whole hours from **1 to 168 (one week)**; duplicates are removed and choices sorted. These are UI suggestions, not a permission policy; explicit administrator service calls retain the existing 1–720-hour range.
+- **Approval dropdown presets:** `1,2,4,8,12,24,48,72,168,0` by default. Use `0` for **Forever** (Omada no-expiry authorization); otherwise use comma-separated whole hours from **1 to 168 (one week)**. These are UI suggestions, not a permission policy; explicit administrator service calls accept `0` or 1–720 hours.
 - **Enable guest deauthentication:** on by default. Adds **Cancel access** for active grants. It uses the same operator credentials to discover the active External Portal grant, calls Hotspot Manager's disconnect command, and confirms that no matching grant remains active before marking the request revoked. A failure leaves the local grant unchanged and shows an error.
 
 A cancellation removes portal internet authorization; it does not necessarily disassociate the radio/Wi-Fi link. Guest access is denied until a new authorization is issued. If the operator lacks permission, the record is missing/ambiguous, or the controller still reports it active, use Hotspot Manager to inspect it. A timeout after the command may have cancelled access even though HA reports uncertainty; do not treat the local grant list as authoritative live state.
@@ -158,7 +158,7 @@ Entity IDs may have suffixes if multiple sites/integrations are installed. Find 
 
 ### Visual editor and visibility
 
-Edit the card to choose sensors, title, optional default-duration override (1–720 hours; blank follows integration options), history page size (1–50), compact spacing, and what to display. Existing YAML remains compatible; all sections/details are shown by default.
+Edit the card to choose sensors, title, optional default-duration override (`0` for Forever or 1–720 hours; blank follows integration options), history page size (1–50), compact spacing, and what to display. Existing YAML remains compatible; all sections/details are shown by default.
 
 | YAML option | Default | Controls |
 |---|---|---|
@@ -218,7 +218,7 @@ Omit `status` for all statuses. `query` is case-insensitive (maximum 120 charact
 | Active sessions sensor | Count and `sessions` attribute for local unexpired grants; `controller_confirmed: false`. |
 | Portal online | Dedicated local listener is running. |
 | Controller online | Most recent controller authentication/health check succeeded. |
-| `omada_guest_access.approve_request` | `request_id`, optional `duration_hours` (1–720). |
+| `omada_guest_access.approve_request` | `request_id`, optional `duration_hours` (`0` for Forever, otherwise 1–720). |
 | `omada_guest_access.deny_request` | `request_id`, optional guest-visible `reason` (up to 500 characters). |
 | `omada_guest_access.revoke_access` | `request_id`; controller deauthentication with confirmation before local revocation. |
 

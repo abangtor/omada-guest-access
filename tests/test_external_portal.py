@@ -51,3 +51,10 @@ def test_external_portal_payload_uses_documented_wireless_fields() -> None:
     assert payload["apMac"] == context.ap_mac
     assert "gatewayMac" not in payload
     assert isinstance(payload["time"], int)
+
+
+def test_no_expiry_authorization_uses_omada_zero_timestamp():
+    context = PortalContext(client_mac="AA:BB:CC:DD:EE:FF", site="Default", gateway_mac="11:22:33:44:55:66", vlan_id="90")
+    payload = _authorization_payload(context, 0)
+    assert payload["time"] == 0
+    assert payload["gatewayMac"] == context.gateway_mac

@@ -151,12 +151,24 @@ async def test_forget_all_records_only_clears_local_history(coordinator, context
     coordinator.client.async_revoke.assert_not_called()
 
 
-@pytest.mark.parametrize("duration", [0, -1, 721, True])
+@pytest.mark.parametrize("duration", [-1, 721, True])
 async def test_invalid_duration_rejected_before_network(coordinator, context, duration):
     item = await coordinator.async_create_request("Alex", context)
     with pytest.raises(ValueError):
         await coordinator.async_approve_request(item["request_id"], duration)
     coordinator.client.async_authorize.assert_not_called()
+
+
+async def test_no_expiry_approval_is_retained_until_cancelled(coordinator, context, freezer):
+    item = await coordinator.async_create_request("Alex", context)
+    coordinator.client.async_authorize.side_effect = None
+    coordinator.client.async_authorize.return_value = None
+    approved = await coordinator.async_approve_request(item["request_id"], 0)
+    assert approved["access_expires_at"] is None
+    coordinator.client.async_authorize.assert_awaited_once_with(context, 0)
+    freezer.tick(timedelta(days=365))
+    await coordinator.async_expire_requests()
+    assert coordinator.requests[item["request_id"]]["status"] == "approved"
 
 
 async def test_consent_persists_without_retroactive_policy_changes(hass, coordinator, context):

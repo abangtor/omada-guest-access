@@ -19,7 +19,7 @@ const CARD_LABELS = {
 const cardSchema = [
   {name: 'title', selector: {text: {}}},
   ...['pending_entity', 'active_entity'].map(name => ({name, required: true, selector: {entity: {domain: 'sensor'}}})),
-  {name: 'duration_hours', selector: {number: {min: 1, max: 720, step: 1, mode: 'box'}}},
+  {name: 'duration_hours', selector: {number: {min: 0, max: 720, step: 1, mode: 'box'}}},
   {name: 'history_page_size', selector: {number: {min: 1, max: 50, step: 1, mode: 'box'}}},
   ...Object.keys(CARD_DEFAULTS).filter(name => typeof CARD_DEFAULTS[name] === 'boolean')
     .map(name => ({name, selector: {boolean: {}}})),
@@ -89,8 +89,8 @@ class OmadaGuestAccessCard extends HTMLElement {
       throw new Error('Set pending_entity and active_entity to the integration sensors.');
     }
     const hours = config.duration_hours ?? null;
-    if (hours !== null && (!Number.isInteger(hours) || hours < 1 || hours > 720)) {
-      throw new Error('duration_hours must be an integer between 1 and 720.');
+    if (hours !== null && (!Number.isInteger(hours) || hours < 0 || hours > 720)) {
+      throw new Error('duration_hours must be 0 (no expiry) or an integer between 1 and 720.');
     }
     const pageSize = config.history_page_size ?? CARD_DEFAULTS.history_page_size;
     if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 50) {
@@ -160,8 +160,10 @@ class OmadaGuestAccessCard extends HTMLElement {
     root.replaceChildren();
     this._node('style', `ha-card{padding:${this._config.compact ? '12px' : '20px'}}h2{margin:0 0 16px}h3{margin-bottom:8px}
       section{padding:${this._config.compact ? '6px' : '12px'} 0;border-top:1px solid var(--divider-color)}p{white-space:pre-wrap;overflow-wrap:anywhere}
-      button{margin:4px 8px 4px 0;padding:8px 14px;cursor:pointer;color:var(--primary-text-color);background:var(--card-background-color);border:1px solid var(--divider-color);border-radius:6px}
-      select,input{padding:8px;max-width:100%;box-sizing:border-box}label{display:block;margin:8px 0}details{margin:8px 0}
+      .guest-row{display:grid;grid-template-columns:minmax(150px,1fr) auto;gap:8px;align-items:center}.guest-info p{margin:4px 0}.actions{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:6px}
+      button{margin:0;padding:8px 12px;cursor:pointer;color:var(--primary-text-color);background:var(--card-background-color);border:1px solid var(--divider-color);border-radius:6px;white-space:nowrap}
+      select,input{padding:8px;max-width:100%;box-sizing:border-box}label{display:block;margin:8px 0}details{margin:8px 0}.actions label{margin:0;display:flex;align-items:center;gap:4px;white-space:nowrap}
+      @media(max-width:600px){.guest-row{grid-template-columns:1fr}.actions{justify-content:flex-start}}
       button:disabled{opacity:.5;cursor:default}.error{color:var(--error-color)}small{color:var(--secondary-text-color)}`, root);
     const card = this._node('ha-card', undefined, root);
     if (this._config.show_title) this._node('h2', this._config.title ?? 'Guest Wi-Fi requests', card);
@@ -178,29 +180,30 @@ class OmadaGuestAccessCard extends HTMLElement {
     const configuredDefault = pending.attributes.default_duration;
     const defaultHours = this._config.duration_hours ??
       (Number.isInteger(configuredDefault) && configuredDefault >= 1 && configuredDefault <= 720 ? configuredDefault : 8);
-    const presets = (pending.attributes.duration_options || [1, 2, 4, 8, 12, 24, 48, 72, 168])
-      .filter(value => Number.isInteger(value) && value >= 1 && value <= 168);
+    const presets = [...new Set([...(pending.attributes.duration_options || [1, 2, 4, 8, 12, 24, 48, 72, 168]), 0])]
+      .filter(value => Number.isInteger(value) && value >= 0 && value <= 168);
     const currentIds = new Set(requests.map(item => item.request_id));
     for (const id of this._selectedDurations.keys()) if (!currentIds.has(id)) this._selectedDurations.delete(id);
     if (this._config.show_pending && (requests.length || this._config.show_empty)) {
       this._node('h3', `Pending (${requests.length})`, card);
       if (!requests.length) this._node('p', 'No requests waiting.', card);
       for (const item of requests) {
-        const row = this._node('section', undefined, card);
-        this._node('strong', item.guest_name || 'Guest', row);
-        if (this._config.show_notes && item.note) this._node('p', item.note, row);
-        this._metadata(row, item.client_mac, item.expires_at, 'expires');
+        const row = this._node('section', undefined, card); row.className = 'guest-row';
+        const info = this._node('div', undefined, row); info.className = 'guest-info';
+        this._node('strong', item.guest_name || 'Guest', info);
+        if (this._config.show_notes && item.note) this._node('p', item.note, info);
+        this._metadata(info, item.client_mac, item.expires_at, 'expires');
         if (this._config.show_actions) {
-          this._node('br', undefined, row);
-          this._button(row, `Approve ${defaultHours}h`, 'approve_request', item,
+          const actions = this._node('div', undefined, row); actions.className = 'actions';
+          this._button(actions, defaultHours === 0 ? 'Approve forever' : `Approve ${defaultHours}h`, 'approve_request', item,
             {duration_hours: defaultHours}, !admin);
           if (this._config.show_duration_selector && presets.length) {
-            const label = this._node('label', 'Other duration ', row);
+            const label = this._node('label', 'Duration', actions);
             const select = this._node('select', undefined, label);
             select.id = `duration-${item.request_id}`;
             select.setAttribute('aria-label', `Approval duration for ${item.guest_name || 'Guest'}`);
             for (const hours of presets) {
-              const text = hours === 168 ? '1 week' : hours >= 24 && hours % 24 === 0 ? `${hours / 24} day(s)` : `${hours}h`;
+              const text = hours === 0 ? 'Forever' : hours === 168 ? '1 week' : hours >= 24 && hours % 24 === 0 ? `${hours / 24} day(s)` : `${hours}h`;
               const option = this._node('option', text, select); option.value = String(hours);
             }
             const selected = this._selectedDurations.get(item.request_id);
@@ -209,10 +212,10 @@ class OmadaGuestAccessCard extends HTMLElement {
             this._selectedDurations.set(item.request_id, hours);
             select.disabled = !admin || this._busy.has(item.request_id);
             select.onchange = () => this._selectedDurations.set(item.request_id, Number(select.value));
-            this._button(row, 'Approve selected', 'approve_request', item,
+            this._button(actions, 'Approve', 'approve_request', item,
               () => ({duration_hours: this._selectedDurations.get(item.request_id)}), !admin);
           }
-          this._button(row, 'Deny', 'deny_request', item, {}, !admin);
+          this._button(actions, 'Deny', 'deny_request', item, {}, !admin);
         }
       }
     }
@@ -221,11 +224,13 @@ class OmadaGuestAccessCard extends HTMLElement {
       this._node('h3', `Unexpired grants (${sessions.length})`, card);
       if (this._config.show_notices) this._node('small', 'Local grant records; not a live controller client list.', card);
       for (const item of sessions) {
-        const row = this._node('section', undefined, card);
-        this._node('strong', item.guest_name || 'Guest', row);
-        this._metadata(row, item.client_mac, item.access_expires_at, 'until');
+        const row = this._node('section', undefined, card); row.className = 'guest-row';
+        const info = this._node('div', undefined, row); info.className = 'guest-info';
+        this._node('strong', item.guest_name || 'Guest', info);
+        this._metadata(info, item.client_mac, item.access_expires_at, 'until');
         if (this._config.show_actions && active.attributes.revoke_supported) {
-          this._button(row, 'Cancel access', 'revoke_access', item, {}, !admin);
+          const actions = this._node('div', undefined, row); actions.className = 'actions';
+          this._button(actions, 'Cancel access', 'revoke_access', item, {}, !admin);
         }
       }
       if (this._config.show_notices && sessions.length && !active.attributes.revoke_supported) {
@@ -335,7 +340,7 @@ class OmadaGuestAccessCard extends HTMLElement {
   _metadata(parent, mac, timestamp, label) {
     const parts = [];
     if (this._config.show_mac && mac) parts.push(mac);
-    if (this._config.show_timestamps) parts.push(`${label} ${this._date(timestamp)}`);
+    if (this._config.show_timestamps) parts.push(timestamp ? `${label} ${this._date(timestamp)}` : label === 'until' ? 'no expiry' : `${label} —`);
     if (parts.length) this._node('p', parts.join(' · '), parent);
   }
   _date(value) { return value ? new Date(value).toLocaleString() : '—'; }

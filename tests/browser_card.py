@@ -170,12 +170,15 @@ async def check_card(page):
     await page.get_by_role("button", name="Approve 8h", exact=True).click()
     assert await page.evaluate("calls.at(-1)[2].duration_hours") == 8
     duration = page.get_by_label("Approval duration for <img src=x onerror=alert(1)>", exact=True)
-    assert await duration.locator("option").all_text_contents() == ["1h", "3h", "8h", "1 day(s)", "1 week"]
+    assert await duration.locator("option").all_text_contents() == ["1h", "3h", "8h", "1 day(s)", "1 week", "Forever"]
     await duration.select_option("168")
     await page.evaluate("mockHass.states['sensor.pending'].last_updated='duration-update';card.hass=mockHass")
     assert await duration.input_value() == "168"
-    await page.get_by_role("button", name="Approve selected", exact=True).click()
+    await page.get_by_role("button", name="Approve", exact=True).click()
     assert await page.evaluate("calls.at(-1)[2].duration_hours") == 168
+    await duration.select_option("0")
+    await page.get_by_role("button", name="Approve", exact=True).click()
+    assert await page.evaluate("calls.at(-1)[2].duration_hours") == 0
     await page.get_by_role("button", name="Cancel access", exact=True).click()
     assert await page.evaluate("calls.at(-1)") == ["omada_guest_access", "revoke_access", {"request_id": "two"}]
     await page.evaluate("mockHass.user.is_admin=false;card.hass=mockHass")
