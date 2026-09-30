@@ -153,3 +153,67 @@ async def test_options_store_branding_and_terms(hass, entry):
     result = await hass.config_entries.options.async_configure(result["flow_id"], user_input=settings)
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert all(entry.options[key] == value for key, value in settings.items())
+
+
+@pytest.fixture
+async def flow_http(hass, hass_client):
+    """Exercise the real API serialization used by the HA frontend."""
+    from homeassistant.components.config import config_entries as config_api
+    from homeassistant.setup import async_setup_component
+
+    assert await async_setup_component(hass, "http", {})
+    assert await async_setup_component(hass, "websocket_api", {})
+    assert config_api.async_setup(hass)
+    return await hass_client()
+
+
+async def test_user_form_loads_over_http(flow_http):
+    response = await flow_http.post("/api/config/config_entries/flow", json={"handler": DOMAIN})
+    assert response.status == 200
+    result = await response.json()
+    assert result["type"] == "form"
+    assert result["step_id"] == "user"
+    fields = {field["name"]: field for field in result["data_schema"]}
+    assert fields["controller_url"]["type"] == "string"
+    assert fields["controller_url"]["required"]
+
+
+@pytest.mark.parametrize("source", [config_entries.SOURCE_REAUTH, config_entries.SOURCE_RECONFIGURE])
+async def test_existing_entry_forms_load_over_http(hass, entry, flow_http, source):
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": source, "entry_id": entry.entry_id}, data=None
+    )
+    response = await flow_http.get(f"/api/config/config_entries/flow/{result['flow_id']}")
+    assert response.status == 200
+    payload = await response.json()
+    assert payload["step_id"] == ("reauth_confirm" if source == config_entries.SOURCE_REAUTH else "reconfigure")
+    assert isinstance(payload["data_schema"], list)
+
+
+async def test_options_form_loads_over_http(entry, flow_http):
+    response = await flow_http.post("/api/config/config_entries/options/flow", json={"handler": entry.entry_id})
+    assert response.status == 200
+    assert (await response.json())["step_id"] == "init"
+
+
+@pytest.mark.parametrize("url", ["not-a-url", "ftp://controller.example", "https://controller.example:bad"])
+async def test_invalid_controller_url_returns_form_over_http(flow_http, config, flow_client, url):
+    response = await flow_http.post("/api/config/config_entries/flow", json={"handler": DOMAIN})
+    assert response.status == 200
+    flow_id = (await response.json())["flow_id"]
+    response = await flow_http.post(
+        f"/api/config/config_entries/flow/{flow_id}", json={**config, "controller_url": url}
+    )
+    assert response.status == 200
+    assert (await response.json())["errors"] == {"base": "invalid_config"}
+    flow_client.async_test_connection.assert_not_called()
+
+
+async def test_auth_error_form_loads_over_http(flow_http, config, flow_client):
+    flow_client.async_test_connection.side_effect = OmadaAuthError("invalid credentials")
+    response = await flow_http.post("/api/config/config_entries/flow", json={"handler": DOMAIN})
+    assert response.status == 200
+    flow_id = (await response.json())["flow_id"]
+    response = await flow_http.post(f"/api/config/config_entries/flow/{flow_id}", json=config)
+    assert response.status == 200
+    assert (await response.json())["errors"] == {"base": "invalid_auth"}

@@ -209,7 +209,9 @@ def _data_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
                 TextSelectorConfig(multiline=True)
             ),
             vol.Optional(CONF_REQUIRE_TERMS, default=defaults.get(CONF_REQUIRE_TERMS, False)): cv.boolean,
-            vol.Required(CONF_CONTROLLER_URL, default=defaults.get(CONF_CONTROLLER_URL, "")): cv.url,
+            # cv.url cannot be serialized for the HA frontend. URL validation is
+            # performed by normalize_controller_url when the form is submitted.
+            vol.Required(CONF_CONTROLLER_URL, default=defaults.get(CONF_CONTROLLER_URL, "")): cv.string,
             vol.Optional(CONF_CONTROLLER_ID, default=defaults.get(CONF_CONTROLLER_ID, "")): cv.string,
             vol.Required(CONF_USERNAME, default=defaults.get(CONF_USERNAME, "")): vol.All(cv.string, vol.Length(min=1)),
             vol.Required(CONF_PASSWORD, default=defaults.get(CONF_PASSWORD, "")): cv.string,

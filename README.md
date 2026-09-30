@@ -147,6 +147,12 @@ recorder:
 
 Guest responses exclude other guests, internal controller context and credentials. Guest pages/status/errors use `Cache-Control: no-store`; the portal disables its own access log. Configure reverse-proxy logging accordingly: the initial query contains MAC addresses and connection details.
 
+## Upgrade notes for 1.2.1
+
+- Fixes the setup/reconfigure/reauthentication form returning “Config flow could not be loaded: 500 Internal Server Error”.
+- Update or redownload the integration through HACS, then restart Home Assistant before retrying Add Integration.
+- Existing configuration and history are preserved. No dashboard card update is needed for this patch.
+
 ## Upgrade notes for 1.2.0
 
 - Update through HACS and restart HA. Update the card resource URL to `?v=1.2.0` and refresh the dashboard.
