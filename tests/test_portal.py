@@ -201,3 +201,137 @@ async def test_custom_portal_text_is_escaped_and_no_terms_by_default(hass, coord
     assert "background:#123ABC" in text
     assert "type='checkbox'" not in text
     assert "<script>alert" not in text
+
+
+@pytest.mark.parametrize("status", ["pending", "approved", "denied", "expired"])
+async def test_reload_restores_request_without_duplicate(
+    hass, coordinator, aiohttp_client, socket_enabled, freezer, status
+):
+    portal = GuestPortal(hass, coordinator, 0)
+    client = await aiohttp_client(portal.create_app())
+    headers = await landing(client)
+    token = headers["X-Portal-Token"]
+    note = "Visiting Sam\nSecond line\nThird line"
+    response = await client.post("/api/request", headers=headers, json={"guest_name": "Alex", "note": note})
+    item = await response.json()
+    request_id = item["request_id"]
+    assert coordinator.requests[request_id]["note"] == note
+    if status == "approved":
+        await coordinator.async_approve_request(request_id)
+    elif status == "denied":
+        await coordinator.async_deny_request(request_id, "Please contact your host")
+    elif status == "expired":
+        freezer.tick(timedelta(minutes=16))
+    cookie = {"Cookie": f"omada_guest_portal={token}"}
+    # A full Omada redirect and a clean URL both recover the same request.
+    for query in (QUERY, None):
+        response = await client.get("/", params=query, headers=cookie)
+        assert response.status == 200
+        page = await response.text()
+        assert f'let id="{request_id}"' in page
+        assert "<form id='request' hidden>" in page
+        assert "<textarea name='note' maxlength='500' rows='4'>" in page
+        assert len(portal._sessions) == 1
+        session_cookie = response.cookies["omada_guest_portal"]
+        assert session_cookie.value == token
+        assert session_cookie["httponly"]
+        assert session_cookie["secure"]  # public HTTPS even behind an HTTP proxy
+        assert session_cookie["samesite"] == "Lax"
+        assert session_cookie["path"] == "/"
+    response = await client.get(f"/api/request/{request_id}", headers=headers)
+    assert (await response.json())["status"] == status
+    response = await client.post("/api/request", headers=headers, json={"guest_name": "Duplicate"})
+    assert response.status == 200
+    assert len(coordinator.requests) == 1
+
+
+async def test_cookie_cannot_recover_other_ip_or_device(hass, coordinator, aiohttp_client, socket_enabled):
+    coordinator.config.update(trusted_proxies="127.0.0.1")
+    portal = GuestPortal(hass, coordinator, 0)
+    client = await aiohttp_client(portal.create_app())
+    headers = await landing(client, {"X-Forwarded-For": "192.168.9.10"})
+    response = await client.post("/api/request", headers=headers, json={"guest_name": "Alex"})
+    request_id = (await response.json())["request_id"]
+    cookie = {"Cookie": f'omada_guest_portal={headers["X-Portal-Token"]}'}
+    for query, ip in ((QUERY, "192.168.9.11"), ({**QUERY, "clientMac": "00:11:22:33:44:55"}, "192.168.9.10")):
+        response = await client.get("/", params=query, headers={**cookie, "X-Forwarded-For": ip})
+        assert response.status == 200
+        assert request_id not in await response.text()
+        token = response.cookies["omada_guest_portal"].value
+        response = await client.get(
+            f"/api/request/{request_id}", headers={"X-Portal-Token": token, "X-Forwarded-For": ip}
+        )
+        assert response.status == 404
+    response = await client.get("/", params={**QUERY, "site": "wrong"}, headers={**headers, **cookie})
+    assert response.status == 400
+    assert (await client.get("/", headers={**cookie, "X-Forwarded-For": "192.168.9.11"})).status == 400
+
+
+async def test_expired_or_unknown_cookie_does_not_recover_request(
+    hass, coordinator, aiohttp_client, socket_enabled, freezer
+):
+    portal = GuestPortal(hass, coordinator, 0)
+    client = await aiohttp_client(portal.create_app())
+    headers = await landing(client)
+    response = await client.post("/api/request", headers=headers, json={"guest_name": "Alex"})
+    request_id = (await response.json())["request_id"]
+    freezer.tick(timedelta(minutes=21))
+    for token in (headers["X-Portal-Token"], "unknown"):
+        cookie = {"Cookie": f"omada_guest_portal={token}"}
+        assert (await client.get("/", headers=cookie)).status == 400
+        response = await client.get("/", params=QUERY, headers=cookie)
+        assert response.status == 200
+        assert request_id not in await response.text()
+        assert response.cookies["omada_guest_portal"].value != token
+
+
+async def test_reload_refreshes_changed_terms_before_submission(hass, coordinator, aiohttp_client, socket_enabled):
+    coordinator.config.update(require_terms=True, terms_text="Original terms")
+    client = await aiohttp_client(GuestPortal(hass, coordinator, 0).create_app())
+    headers = await landing(client)
+    coordinator.config["terms_text"] = "New terms"
+    response = await client.get("/", params=QUERY, headers={"Cookie": f'omada_guest_portal={headers["X-Portal-Token"]}'})
+    token = response.cookies["omada_guest_portal"].value
+    assert token != headers["X-Portal-Token"]
+    response = await client.post(
+        "/api/request", headers={"X-Portal-Token": token}, json={"guest_name": "Alex", "terms_accepted": True}
+    )
+    assert response.status == 201
+    item = await response.json()
+    assert coordinator.requests[item["request_id"]]["terms_text"] == "New terms"
+
+
+async def test_browser_cookie_round_trip_on_direct_http(hass, coordinator, aiohttp_client, socket_enabled):
+    coordinator.config["portal_url"] = "http://guest.example.com"
+    portal = GuestPortal(hass, coordinator, 0)
+    client = await aiohttp_client(portal.create_app())
+    headers = await landing(client)
+    response = await client.post("/api/request", headers=headers, json={"guest_name": "Alex"})
+    request_id = (await response.json())["request_id"]
+    # No manually supplied Cookie header: the HTTP client behaves like a browser.
+    response = await client.get("/")
+    assert response.status == 200
+    assert f'let id="{request_id}"' in await response.text()
+    assert not response.cookies["omada_guest_portal"]["secure"]
+    assert len(portal._sessions) == 1
+    # A pruned record must not leave the browser stuck polling a missing request.
+    del coordinator.requests[request_id]
+    response = await client.get("/")
+    assert "let id=null" in await response.text()
+
+
+async def test_recovery_at_capacity_does_not_extend_session(
+    hass, coordinator, aiohttp_client, socket_enabled, freezer, monkeypatch
+):
+    monkeypatch.setattr("custom_components.omada_guest_access.portal.PORTAL_MAX_SESSIONS", 1)
+    portal = GuestPortal(hass, coordinator, 0)
+    client = await aiohttp_client(portal.create_app())
+    headers = await landing(client)
+    token = headers["X-Portal-Token"]
+    deadline = portal._sessions[token]["expires_at"]
+    freezer.tick(timedelta(minutes=5))
+    response = await client.get("/", params=QUERY, headers={"Cookie": f"omada_guest_portal={token}"})
+    assert response.status == 200
+    assert portal._sessions[token]["expires_at"] == deadline
+    assert int(response.cookies["omada_guest_portal"]["max-age"]) <= 15 * 60
+    assert (await client.get("/", params=QUERY)).status == 503

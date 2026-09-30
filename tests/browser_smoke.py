@@ -97,6 +97,7 @@ async def main(executable: str | None) -> None:
             assert await page.get_by_role("button", name="Approve 4h").is_disabled()
 
             submissions = []
+            guest_status = "pending"
 
             async def route(request_route):
                 path = request_route.request.url
@@ -105,7 +106,7 @@ async def main(executable: str | None) -> None:
                     assert request_route.request.headers["x-portal-token"] == "testtoken"
                     await request_route.fulfill(json={"request_id": "guest1", "status": "pending"})
                 elif path.endswith("/api/request/guest1"):
-                    await request_route.fulfill(json={"request_id": "guest1", "status": "approved"})
+                    await request_route.fulfill(json={"request_id": "guest1", "status": guest_status})
                 else:
                     await request_route.fulfill(
                         content_type="text/html",
@@ -117,24 +118,38 @@ async def main(executable: str | None) -> None:
                                 "require_terms": True,
                                 "terms_text": "Be kind. <script>bad()</script>",
                             },
+                            "guest1" if submissions else None,
                         ),
                     )
 
             await page.route("https://guest.example.com/**", route)
             await page.goto("https://guest.example.com/")
             await page.get_by_label("Your name").fill("Alex")
-            await page.get_by_label("Optional note").fill("Visiting Sam")
+            await page.get_by_label("Optional note").fill("Visiting Sam\nArriving at 7pm")
+            assert await page.locator("textarea[name=note]").count() == 1
             await page.get_by_role("heading", name="Garden Guest Wi-Fi").wait_for()
             # Native form validity keeps an unchecked consent box from submitting.
             await page.get_by_role("button", name="Request access").click()
             assert not submissions
             await page.get_by_role("checkbox").check()
             await page.get_by_role("button", name="Request access").click()
+            await page.get_by_text("Request sent. Waiting for approval…", exact=True).wait_for()
+            await page.reload()
+            await page.get_by_text("Request sent. Waiting for approval…", exact=True).wait_for()
+            assert await page.locator("form").is_hidden()
+            guest_status = "approved"
             await page.get_by_text("Access approved. You can now use the internet.", exact=True).wait_for()
-            assert submissions == [{"guest_name": "Alex", "note": "Visiting Sam", "terms_accepted": True}]
+            await page.reload()
+            await page.get_by_text("Access approved. You can now use the internet.", exact=True).wait_for()
+            assert await page.locator("form").is_hidden()
+            guest_status = "denied"
+            await page.reload()
+            await page.get_by_text("Access was denied.", exact=True).wait_for()
+            assert await page.locator("form").is_hidden()
+            assert submissions == [{"guest_name": "Alex", "note": "Visiting Sam\nArriving at 7pm", "terms_accepted": True}]
             assert not errors, errors
             print(
-                "Browser smoke passed: admin actions, history pagination/filtering/errors, stale-response isolation, branding, consent, XSS escaping, guest approval"
+                "Browser smoke passed: admin actions, history pagination/filtering/errors, stale-response isolation, branding, consent, XSS escaping, multiline notes, request restoration after reload"
             )
         finally:
             await browser.close()

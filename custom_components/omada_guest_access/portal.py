@@ -40,6 +40,8 @@ from .const import (
 from .coordinator import OmadaGuestAccessCoordinator
 from .omada_client import PortalContext
 
+_SESSION_COOKIE = "omada_guest_portal"
+
 _MAC = re.compile(r"^(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$")
 
 
@@ -106,31 +108,61 @@ class GuestPortal:
         self._expire_sessions()
         if not self._allow(request):
             raise web.HTTPTooManyRequests(text="Too many portal attempts. Please wait and try again.")
-        context = _portal_context_from_query(request.query, self.coordinator.config[CONF_SITE])
-        if len(self._sessions) >= PORTAL_MAX_SESSIONS:
-            raise web.HTTPServiceUnavailable(text="Portal is busy. Please try again later.")
-        session_id = uuid4().hex
-        self._sessions[session_id] = {
-            "context": context,
-            "terms_version": self.coordinator.terms_version,
-            "ip": self._client_ip(request),
-            "expires_at": dt_util.utcnow()
-            + timedelta(
-                seconds=max(
-                    PORTAL_SESSION_TTL_SECONDS,
-                    (self.coordinator.config.get(CONF_PENDING_TIMEOUT, DEFAULT_PENDING_TIMEOUT_MINUTES) + 5) * 60,
-                )
-            ),
-            "request_id": None,
-        }
-        return web.Response(
-            text=_page(session_id, self.coordinator.config),
+        ip = self._client_ip(request)
+        session_id = request.cookies.get(_SESSION_COOKIE, "")
+        session = self._sessions.get(session_id)
+        if session is not None and session["ip"] != ip:
+            session = None
+        # A cookie can recover a clean URL, but must never bypass validation of
+        # a supplied redirect or carry a request to a different device/context.
+        context = (
+            _portal_context_from_query(request.query, self.coordinator.config[CONF_SITE])
+            if request.query or session is None
+            else session["context"]
+        )
+        if session is not None and (
+            session["context"] != context
+            or (not session["request_id"] and session["terms_version"] != self.coordinator.terms_version)
+        ):
+            session = None
+        if session is None:
+            if len(self._sessions) >= PORTAL_MAX_SESSIONS:
+                raise web.HTTPServiceUnavailable(text="Portal is busy. Please try again later.")
+            session_id = uuid4().hex
+            session = self._sessions[session_id] = {
+                "context": context,
+                "terms_version": self.coordinator.terms_version,
+                "ip": ip,
+                "expires_at": dt_util.utcnow()
+                + timedelta(
+                    seconds=max(
+                        PORTAL_SESSION_TTL_SECONDS,
+                        (self.coordinator.config.get(CONF_PENDING_TIMEOUT, DEFAULT_PENDING_TIMEOUT_MINUTES) + 5) * 60,
+                    )
+                ),
+                "request_id": None,
+            }
+        if session["request_id"] not in self.coordinator.requests:
+            session["request_id"] = None
+        response = web.Response(
+            text=_page(session_id, self.coordinator.config, session["request_id"]),
             content_type="text/html",
             headers={
                 "Content-Security-Policy": f"default-src 'none'; script-src 'nonce-{session_id}'; "
                 "style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
             },
         )
+        public_url = self.coordinator.config.get(CONF_PORTAL_URL) or str(request.url)
+        response.set_cookie(
+            _SESSION_COOKIE,
+            session_id,
+            max_age=max(1, int((session["expires_at"] - dt_util.utcnow()).total_seconds())),
+            httponly=True,
+            secure=urlsplit(public_url).scheme == "https",
+            samesite="Lax",
+            path="/",
+        )
+        return response
 
     async def _create_request(self, request: web.Request) -> web.Response:
         session = self._session_for(request)
@@ -295,7 +327,9 @@ def parse_networks(value: str) -> list:
     return [ip_network(part.strip(), strict=False) for part in value.split(",") if part.strip()]
 
 
-def _page(session_id: str, config: dict[str, Any] | None = None) -> str:
+def _page(
+    session_id: str, config: dict[str, Any] | None = None, request_id: str | None = None
+) -> str:
     config = config or {}
     terms = config.get(CONF_TERMS_TEXT, "").strip()
     terms_html = ""
@@ -310,6 +344,8 @@ def _page(session_id: str, config: dict[str, Any] | None = None) -> str:
         accent = DEFAULT_PORTAL_ACCENT
     return Template(_PAGE).substitute(
         token=json.dumps(session_id),
+        request_id=json.dumps(request_id),
+        form_hidden=" hidden" if request_id else "",
         nonce=escape(session_id, quote=True),
         title=escape(config.get(CONF_PORTAL_TITLE, DEFAULT_PORTAL_TITLE)),
         message=escape(config.get(CONF_PORTAL_MESSAGE, DEFAULT_PORTAL_MESSAGE)),
@@ -321,21 +357,23 @@ def _page(session_id: str, config: dict[str, Any] | None = None) -> str:
 _PAGE = """<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
 <title>$title</title><style>
 body{font-family:system-ui;max-width:440px;margin:8vh auto;padding:1rem;color:#15202b;background:#fff}
-input,button{box-sizing:border-box;width:100%;padding:.8rem;margin:.4rem 0}
+input,textarea,button{box-sizing:border-box;width:100%;padding:.8rem;margin:.4rem 0}
+textarea{min-height:6rem;resize:vertical;font:inherit}
 button{background:$accent;color:#fff;border:0;border-radius:.3rem;font:inherit;cursor:pointer}
 button:disabled{opacity:.6;cursor:wait}input[type=checkbox]{width:auto;margin-right:.5rem}
 #status{margin-top:1rem}#terms{margin:1rem 0}p{white-space:pre-wrap;overflow-wrap:anywhere}
 .consent{display:block;margin:1rem 0}small{color:#52606d}
 </style></head><body>
-<h1>$title</h1><p>$message</p><form id='request'>
+<h1>$title</h1><p>$message</p><form id='request'$form_hidden>
 <label>Your name<input name='guest_name' required maxlength='120' autocomplete='name'></label>
-<label>Optional note<input name='note' maxlength='500'></label>$terms
+<label>Optional note<textarea name='note' maxlength='500' rows='4'></textarea></label>$terms
 <button>Request access</button></form><p id='status' role='status' aria-live='polite'></p><script nonce='$nonce'>
-const token=$token,f=document.querySelector('form'),s=document.querySelector('#status');let id,timer;
+const token=$token,f=document.querySelector('form'),s=document.querySelector('#status');let id=$request_id,timer;
 async function api(path,opts={}){let r=await fetch(path,{...opts,headers:{'Content-Type':'application/json','X-Portal-Token':token,...(opts.headers||{})}});if(!r.ok)throw new Error();return r.json()}
-async function poll(){try{let x=await api('/api/request/'+id);if(x.status==='pending')return;clearInterval(timer);if(x.status==='approved'){s.textContent='Access approved. You can now use the internet.';if(x.redirect_url)location.assign(x.redirect_url)}else if(x.status==='denied')s.textContent=x.denial_reason||'Access was denied.';else s.textContent='This request has expired.'}catch(_){clearInterval(timer);s.textContent='Your portal session expired. Please reconnect to Guest Wi-Fi.'}}
+async function poll(){try{let x=await api('/api/request/'+id);if(x.status==='pending'){s.textContent='Request sent. Waiting for approval…';return;}clearInterval(timer);if(x.status==='approved'){s.textContent='Access approved. You can now use the internet.';if(x.redirect_url)location.assign(x.redirect_url)}else if(x.status==='denied')s.textContent=x.denial_reason||'Access was denied.';else s.textContent='This request has expired.'}catch(_){clearInterval(timer);s.textContent='Your portal session expired. Please reconnect to Guest Wi-Fi.'}}
 f.onsubmit=async e=>{e.preventDefault();const button=f.querySelector('button');button.disabled=true;
 try{const body=Object.fromEntries(new FormData(f));if(f.elements.terms_accepted)body.terms_accepted=f.elements.terms_accepted.checked;
 let x=await api('/api/request',{method:'POST',body:JSON.stringify(body)});id=x.request_id;f.hidden=true;s.textContent='Request sent. Waiting for approval…';timer=setInterval(poll,3000);await poll()}
 catch(_){s.textContent='Unable to send your request. Please reconnect and try again.'}finally{button.disabled=false}};
+if(id){f.hidden=true;s.textContent='Restoring your request…';timer=setInterval(poll,3000);poll();}
 </script></body></html>"""

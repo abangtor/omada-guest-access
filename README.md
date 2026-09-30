@@ -147,6 +147,14 @@ recorder:
 
 Guest responses exclude other guests, internal controller context and credentials. Guest pages/status/errors use `Cache-Control: no-store`; the portal disables its own access log. Configure reverse-proxy logging accordingly: the initial query contains MAC addresses and connection details.
 
+## Upgrade notes for 1.2.3
+
+- Update/redownload through HACS and restart HA. The guest portal update needs no proxy header changes.
+- Reloading the guest page now restores the existing request and polls its status instead of showing a fresh form. Recovery uses an HttpOnly, SameSite=Lax cookie, marked Secure when the configured public portal URL uses HTTPS. Keep that public URL set correctly behind a reverse proxy.
+- Recovery is restricted to the same browser, guest IP and Omada redirect context. It lasts for the original portal session (at least 20 minutes, or the pending timeout plus 5 minutes). Cookies must be enabled. HA restart/integration reload clears browser sessions, but not stored requests; reconnect to guest Wi-Fi for a new session. Recovery never identifies a guest by MAC address alone.
+- The optional note is now multiline (still limited to 500 characters); line breaks are retained in the request and dashboard card.
+- The existing request card is unchanged: no new resource version is required. A copyable [card configuration](examples/dashboard-card.yaml) is included; adjust its sensor IDs to your installation.
+
 ## Upgrade notes for 1.2.2
 
 - Setup now distinguishes controller TLS failures from network/API failures and rejected credentials. Errors include sanitized timeout, HTTP-status, API-code or unexpected-response details, never credentials or raw controller response text.
