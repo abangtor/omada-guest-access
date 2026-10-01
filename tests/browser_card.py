@@ -70,7 +70,7 @@ async def check_card(page):
 
     await page.evaluate("""card.setConfig({...baseConfig,show_notes:false,show_mac:false,show_timestamps:false,
       show_actions:false,show_notices:false,show_decision_user:false,show_terms:false,compact:true,history_page_size:5})""")
-    assert await page.get_by_role("button", name="Approve 4h").count() == 0
+    assert await page.get_by_role("button", name="Approve", exact=True).count() == 0
     assert await page.get_by_role("button", name="Deny", exact=True).count() == 0
     assert await page.get_by_text("Visiting Alex", exact=True).count() == 0
     assert await page.get_by_text("Local grant records; not a live controller client list.", exact=True).count() == 0
@@ -155,7 +155,8 @@ async def check_card(page):
     assert schemas["history_page_size"]["selector"]["number"]["max"] == 50
     assert schemas["show_history"]["selector"] == {"boolean": {}}
     assert all(result["labels"])
-    assert await page.get_by_role("button", name="Approve 12h", exact=True).count() == 1
+    assert await page.get_by_role("button", name="Approve", exact=True).count() == 1
+    assert await page.get_by_text("Duration", exact=True).count() == 0
     assert await page.get_by_role("heading", name="Unexpired grants (1)", exact=True).count() == 0
     # Integration-level duration defaults/presets and controller cancellation controls.
     await page.evaluate("""() => {
@@ -167,7 +168,7 @@ async def check_card(page):
       window.integrationConfig=withoutOverride;
       card.setConfig(withoutOverride);card.hass=mockHass;
     }""")
-    await page.get_by_role("button", name="Approve 8h", exact=True).click()
+    await page.get_by_role("button", name="Approve", exact=True).click()
     assert await page.evaluate("calls.at(-1)[2].duration_hours") == 8
     duration = page.get_by_label("Approval duration for <img src=x onerror=alert(1)>", exact=True)
     assert await duration.locator("option").all_text_contents() == ["1h", "3h", "8h", "1 day(s)", "1 week", "Forever"]
@@ -197,7 +198,7 @@ async def check_card(page):
       mockHass.states['sensor.pending'].attributes.default_duration=12;
       card.setConfig({...integrationConfig,show_duration_selector:false});
     }""")
-    assert await page.get_by_role("button", name="Approve 12h", exact=True).count() == 1
+    assert await page.get_by_role("button", name="Approve", exact=True).count() == 1
     assert await duration.count() == 0
     assert await page.evaluate("""() => {
       const form=editor.shadowRoot.querySelector('ha-form');

@@ -56,7 +56,7 @@ async def main(executable: str | None) -> None:
             }""")
             assert await page.locator("omada-guest-access-card img").count() == 0
             assert await page.get_by_text("<img src=x onerror=alert(1)>", exact=True).count() == 1
-            await page.get_by_role("button", name="Approve 4h").click()
+            await page.get_by_role("button", name="Approve").click()
             assert await page.evaluate("calls[0]") == [
                 "omada_guest_access",
                 "approve_request",
@@ -98,7 +98,7 @@ async def main(executable: str | None) -> None:
             await page.evaluate("resolveHistory({total:1,offset:0,limit:20,requests:[{guest_name:'Secret history'}]})")
             assert await page.get_by_text("Secret history", exact=True).count() == 0
             assert await page.get_by_role("button", name="Show history", exact=True).count() == 0
-            assert await page.get_by_role("button", name="Approve 4h").is_disabled()
+            assert await page.get_by_role("button", name="Approve").is_disabled()
 
             await check_card(page)
 

@@ -233,11 +233,8 @@ class OmadaGuestAccessCard extends HTMLElement {
         this._metadata(info, item.client_mac, item.expires_at, 'expires');
         if (this._config.show_actions) {
           const actions = this._node('div', undefined, row); actions.className = 'actions';
-          this._button(actions, defaultHours === 0 ? 'Approve forever' : `Approve ${defaultHours}h`, 'approve_request', item,
-            {duration_hours: defaultHours}, !canDecide);
           if (this._config.show_duration_selector && presets.length) {
-            const label = this._node('label', 'Duration', actions);
-            const select = this._node('select', undefined, label);
+            const select = this._node('select', undefined, actions);
             select.id = `duration-${item.request_id}`;
             select.setAttribute('aria-label', `Approval duration for ${item.guest_name || 'Guest'}`);
             for (const hours of presets) {
@@ -252,6 +249,9 @@ class OmadaGuestAccessCard extends HTMLElement {
             select.onchange = () => this._selectedDurations.set(item.request_id, Number(select.value));
             this._button(actions, 'Approve', 'approve_request', item,
               () => ({duration_hours: this._selectedDurations.get(item.request_id)}), !canDecide);
+          } else {
+            this._button(actions, 'Approve', 'approve_request', item,
+              {duration_hours: defaultHours}, !canDecide);
           }
           this._button(actions, 'Deny', 'deny_request', item, {}, !canDecide);
         }

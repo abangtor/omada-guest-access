@@ -2,22 +2,69 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="{{ accent }}">
   <title>{{ title }}</title>
   {{ style_html }}
   <style>
-    body { max-width: 640px; background: #f4f7fb; }
-    main { background: white; border-radius: 16px; padding: 24px; }
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    body {
+      min-height: 100vh; margin: 0; display: grid; place-items: center;
+      padding: 24px; color: #12233f;
+      background:
+        radial-gradient(circle at 12% 10%, color-mix(in srgb, {{ accent }} 24%, transparent), transparent 34rem),
+        radial-gradient(circle at 88% 90%, #a8d8ff 0, transparent 30rem),
+        linear-gradient(145deg, #f7fbff, #e8eef8);
+      font: 16px/1.55 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    .shell { width: min(100%, 620px); }
+    .brand { display: flex; align-items: center; gap: 12px; margin: 0 8px 16px; }
+    .mark { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 14px;
+      color: white; background: {{ accent }}; box-shadow: 0 10px 24px color-mix(in srgb, {{ accent }} 34%, transparent); }
+    .mark svg { width: 23px; height: 23px; }
+    .brand span { color: #60718e; font-size: .82rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+    main { overflow: hidden; background: rgba(255,255,255,.92); border: 1px solid rgba(255,255,255,.72);
+      border-radius: 28px; padding: clamp(24px, 6vw, 42px); box-shadow: 0 24px 70px rgba(28,54,95,.18); backdrop-filter: blur(16px); }
+    h1 { margin: 0; font-size: clamp(1.8rem, 6vw, 2.55rem); letter-spacing: -.045em; line-height: 1.05; }
+    .intro { margin: 14px 0 28px; color: #53627c; font-size: 1.05rem; }
+    .restored { display: flex; gap: 8px; align-items: center; margin: 0 0 22px; padding: 11px 13px;
+      border-radius: 13px; background: #edf8f3; color: #176342; font-size: .9rem; }
+    .restored::before { content: "✓"; font-weight: 800; }
+    form { display: grid; gap: 16px; }
+    form label { display: grid; gap: 7px; color: #33445f; font-size: .9rem; font-weight: 700; }
+    form input:not([type=checkbox]), form textarea { width: 100%; border: 1px solid #d9e1ed; border-radius: 13px;
+      padding: 13px 14px; background: #fbfcfe; color: #12233f; font: inherit; outline: none; transition: .18s ease; }
+    form textarea { min-height: 104px; resize: vertical; }
+    form input:focus, form textarea:focus { border-color: {{ accent }}; box-shadow: 0 0 0 4px color-mix(in srgb, {{ accent }} 17%, transparent); background: white; }
+    form .consent { display: flex; align-items: flex-start; gap: 9px; font-size: .84rem; font-weight: 500; line-height: 1.4; }
+    form .consent input { accent-color: {{ accent }}; margin-top: 3px; }
+    button[type=submit] { width: 100%; border: 0; border-radius: 14px; padding: 14px 18px; cursor: pointer;
+      color: white; background: {{ accent }}; font: 700 1rem inherit; box-shadow: 0 10px 22px color-mix(in srgb, {{ accent }} 30%, transparent); transition: transform .18s ease, box-shadow .18s ease; }
+    button[type=submit]:hover { transform: translateY(-1px); box-shadow: 0 14px 28px color-mix(in srgb, {{ accent }} 36%, transparent); }
+    #forget-details { border: 0; background: transparent; color: #6c7a92; cursor: pointer; font: .82rem inherit; text-decoration: underline; }
+    #status { min-height: 1.5em; margin: 20px 0 0; padding: 0; color: #40516c; font-weight: 600; }
+    details { margin: 4px 0; border-radius: 12px; background: #f4f7fb; padding: 10px 12px; color: #52627b; font-size: .87rem; }
+    summary { cursor: pointer; color: #2b3e5c; font-weight: 700; }
+    footer { margin: 18px 8px 0; color: #718099; text-align: center; font-size: .78rem; }
+    @media (max-width: 440px) { body { padding: 14px; } main { border-radius: 22px; } }
   </style>
 </head>
 <body>
-  <main>
-    <h1>{{ title }}</h1>
-    <p>{{ message }}</p>
-    {% if request_id %}<small>Your request is being restored.</small>{% endif %}
-    {{ form_html }}
-    {{ status_html }}
-  </main>
+  <div class="shell">
+    <div class="brand" aria-label="Guest network">
+      <div class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M3 9a13 13 0 0 1 18 0M6 12a8.5 8.5 0 0 1 12 0M9.5 15.5a3.5 3.5 0 0 1 5 0M12 19h.01"/></svg></div>
+      <span>Guest network</span>
+    </div>
+    <main>
+      <h1>{{ title }}</h1>
+      <p class="intro">{{ message }}</p>
+      {% if request_id %}<p class="restored">Restoring your access request</p>{% endif %}
+      {{ form_html }}
+      {{ status_html }}
+    </main>
+    <footer>Secure guest internet access</footer>
+  </div>
   {{ script_html }}
 </body>
 </html>
