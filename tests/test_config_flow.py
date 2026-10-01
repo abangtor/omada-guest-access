@@ -299,4 +299,6 @@ async def test_extended_options_are_serializable(entry, flow_http):
     assert fields["portal_template"]["selector"]["text"]["multiline"]
     assert "duration_options" in fields
     assert "enable_revoke" in fields
+    assert "show_remember_checkbox" in fields
+    assert "show_forget_button" in fields
     assert "forget_all_records" in fields

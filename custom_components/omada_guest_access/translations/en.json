@@ -121,6 +121,8 @@
           "enable_revoke": "Enable guest deauthentication via Hotspot Manager web API",
           "portal_css": "Custom portal CSS",
           "portal_template": "Full portal Jinja template (blank: built-in layout)",
+          "show_remember_checkbox": "Show ‘Remember my name and note’ checkbox",
+          "show_forget_button": "Show ‘Forget saved details’ button",
           "decision_user_ids": "Users allowed to approve, deny, or cancel guest access",
           "forget_all_records": "Forget all local guest records (does not deauthenticate Omada guests)"
         }

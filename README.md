@@ -68,7 +68,7 @@ The listener itself serves HTTP. Terminate HTTPS at the proxy; do not proxy gues
 
 ## Returning guests and reload behavior
 
-After a successful request, the portal saves only the guest's **name and note** in that browser's local storage. A new visit to the same portal/controller/site prefills those fields for up to **30 days since the last successful submission**. Guests can edit them, uncheck **Remember my name and note**, or use **Forget saved details**. These controls also appear inside `form_html` in custom Jinja templates.
+After a successful request, the portal saves only the guest's **name and note** in that browser's local storage. A new visit to the same portal/controller/site prefills those fields for up to **30 days since the last successful submission**. By default, guests can edit them, uncheck **Remember my name and note**, or use **Forget saved details**. Both controls can be hidden independently in integration options; hiding the checkbox keeps browser-side remembering enabled, while hiding the forget button removes only its portal UI. These controls also appear inside `form_html` in custom Jinja templates.
 
 This is browser-local convenience, not identification or automatic approval. A new session still requires a request and fresh terms acceptance. No request/session tokens or consent are stored in the remembered profile; other guests' history is never looked up by MAC. The fields are shared with anyone using that same browser profile. Forgetting details clears the browser copy, not HA's retained request history. Expired profiles are discarded on the next visit.
 

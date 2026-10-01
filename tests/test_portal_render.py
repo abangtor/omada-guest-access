@@ -27,6 +27,18 @@ def test_removed_header_footer_ignored_and_custom_css_preserved():
     assert "&lt;script&gt;bad()&lt;/script&gt;" in page
 
 
+def test_browser_memory_controls_can_be_hidden_without_disabling_prefill():
+    page = _page(
+        "token",
+        {"show_remember_checkbox": False, "show_forget_button": False},
+    )
+    assert "id='remember-details'" not in page
+    assert "id='forget-details'" not in page
+    # With no opt-out control, successful submissions keep using local storage.
+    assert "localStorage.setItem(memoryKey" in page
+    assert "if(remember&&!remember.checked)" in page
+
+
 def test_full_template_has_working_fragments_and_no_secrets():
     config = {
         "password": "never-disclose",

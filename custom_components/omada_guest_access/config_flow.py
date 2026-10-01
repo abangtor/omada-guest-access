@@ -37,6 +37,8 @@ from .const import (
     CONF_PORTAL_URL,
     CONF_REQUIRE_TERMS,
     CONF_RETENTION_DAYS,
+    CONF_SHOW_FORGET_BUTTON,
+    CONF_SHOW_REMEMBER_CHECKBOX,
     CONF_SITE,
     CONF_TERMS_TEXT,
     CONF_TRUSTED_PROXIES,
@@ -172,6 +174,8 @@ class OmadaGuestAccessOptionsFlow(config_entries.OptionsFlow):
             CONF_ENABLE_REVOKE,
             CONF_PORTAL_CSS,
             CONF_PORTAL_TEMPLATE,
+            CONF_SHOW_REMEMBER_CHECKBOX,
+            CONF_SHOW_FORGET_BUTTON,
             CONF_PORTAL_URL,
             CONF_PORTAL_PORT,
             CONF_DEFAULT_DURATION,
@@ -225,6 +229,10 @@ def validate_portal_settings(values: dict[str, Any]) -> None:
         raise ValueError("Accent must be a six-digit hex color")
     if not isinstance(values.get(CONF_REQUIRE_TERMS, False), bool):
         raise ValueError("Require terms must be a boolean")
+    if not isinstance(values.get(CONF_SHOW_REMEMBER_CHECKBOX, True), bool):
+        raise ValueError("Show remember checkbox must be a boolean")
+    if not isinstance(values.get(CONF_SHOW_FORGET_BUTTON, True), bool):
+        raise ValueError("Show forget button must be a boolean")
     if values.get(CONF_REQUIRE_TERMS) and not values.get(CONF_TERMS_TEXT, "").strip():
         raise ValueError("Terms text is required when acceptance is mandatory")
     validate_template(values)
@@ -300,6 +308,14 @@ def _data_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
                 TextSelectorConfig(multiline=True)
             ),
             vol.Optional(CONF_REQUIRE_TERMS, default=defaults.get(CONF_REQUIRE_TERMS, False)): cv.boolean,
+            vol.Optional(
+                CONF_SHOW_REMEMBER_CHECKBOX,
+                default=defaults.get(CONF_SHOW_REMEMBER_CHECKBOX, True),
+            ): cv.boolean,
+            vol.Optional(
+                CONF_SHOW_FORGET_BUTTON,
+                default=defaults.get(CONF_SHOW_FORGET_BUTTON, True),
+            ): cv.boolean,
             # cv.url cannot be serialized for the HA frontend. URL validation is
             # performed by normalize_controller_url when the form is submitted.
             vol.Required(CONF_CONTROLLER_URL, default=defaults.get(CONF_CONTROLLER_URL, "")): cv.string,

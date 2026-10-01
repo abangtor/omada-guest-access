@@ -21,6 +21,8 @@ from .const import (
     CONF_PORTAL_TEMPLATE,
     CONF_PORTAL_TITLE,
     CONF_REQUIRE_TERMS,
+    CONF_SHOW_FORGET_BUTTON,
+    CONF_SHOW_REMEMBER_CHECKBOX,
     CONF_TERMS_TEXT,
     DEFAULT_PORTAL_ACCENT,
     DEFAULT_PORTAL_MESSAGE,
@@ -122,6 +124,8 @@ def _builtin_page(session_id: str, config: dict[str, Any] | None = None, request
         message=escape(config.get(CONF_PORTAL_MESSAGE, DEFAULT_PORTAL_MESSAGE)),
         accent=accent,
         terms=terms_html,
+        remember_control="" if not config.get(CONF_SHOW_REMEMBER_CHECKBOX, True) else "<label class='consent'><input id='remember-details' type='checkbox' checked> Remember my name and note on this browser for 30 days.</label>",
+        forget_control="" if not config.get(CONF_SHOW_FORGET_BUTTON, True) else "<button id='forget-details' type='button' hidden>Forget saved details</button>",
     )
 
 
@@ -138,25 +142,24 @@ button:disabled{opacity:.6;cursor:wait}input[type=checkbox]{width:auto;margin-ri
 <h1>$title</h1><p>$message</p><form id='request'$form_hidden>
 <label>Your name<input name='guest_name' required maxlength='120' autocomplete='name'></label>
 <label>Optional note<textarea name='note' maxlength='500' rows='4'></textarea></label>$terms
-<label class='consent'><input id='remember-details' type='checkbox' checked> Remember my name and note on this browser for 30 days.</label>
-<button type='submit'>Request access</button>
-<button id='forget-details' type='button' hidden>Forget saved details</button></form><p id='status' role='status' aria-live='polite'></p><script id='portal-script' nonce='$nonce'>
+${remember_control}<button type='submit'>Request access</button>
+${forget_control}</form><p id='status' role='status' aria-live='polite'></p><script id='portal-script' nonce='$nonce'>
 const token=$token,f=document.querySelector('#request'),s=document.querySelector('#status');let id=$request_id,timer;
 const memoryKey=$memory_key,memoryTTL=30*24*60*60*1000,remember=f.querySelector('#remember-details'),forget=f.querySelector('#forget-details');
-function forgetDetails(){try{localStorage.removeItem(memoryKey)}catch(_){}forget.hidden=true}
+function forgetDetails(){try{localStorage.removeItem(memoryKey)}catch(_){}if(forget)forget.hidden=true}
 function restoreDetails(){try{
   const raw=localStorage.getItem(memoryKey);if(!raw)return;
   if(raw.length>8192)throw new Error();const saved=JSON.parse(raw),now=Date.now();
   if(!saved||saved.version!==1||typeof saved.guest_name!=='string'||!saved.guest_name.trim()||saved.guest_name.length>120||
     typeof saved.note!=='string'||saved.note.length>500||!Number.isFinite(saved.expires_at)||saved.expires_at<=now||saved.expires_at>now+memoryTTL)throw new Error();
-  f.elements.guest_name.value=saved.guest_name;f.elements.note.value=saved.note;forget.hidden=false;
+  f.elements.guest_name.value=saved.guest_name;f.elements.note.value=saved.note;if(forget)forget.hidden=false;
 }catch(_){forgetDetails()}}
-function saveDetails(body){if(!remember.checked){forgetDetails();return}try{
+function saveDetails(body){if(remember&&!remember.checked){forgetDetails();return}try{
   localStorage.setItem(memoryKey,JSON.stringify({version:1,guest_name:body.guest_name,note:body.note,expires_at:Date.now()+memoryTTL}));
-  forget.hidden=false;
+  if(forget)forget.hidden=false;
 }catch(_){/* Storage may be disabled by the captive browser; access still works. */}}
-forget.onclick=()=>{forgetDetails();f.elements.guest_name.value='';f.elements.note.value='';remember.checked=false};
-remember.onchange=()=>{if(!remember.checked)forgetDetails()};
+if(forget)forget.onclick=()=>{forgetDetails();f.elements.guest_name.value='';f.elements.note.value='';if(remember)remember.checked=false};
+if(remember)remember.onchange=()=>{if(!remember.checked)forgetDetails()};
 restoreDetails();
 async function api(path,opts={}){let r=await fetch(path,{...opts,headers:{'Content-Type':'application/json','X-Portal-Token':token,...(opts.headers||{})}});if(!r.ok)throw new Error();return r.json()}
 function showContinue(target){try{

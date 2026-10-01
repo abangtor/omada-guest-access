@@ -72,7 +72,7 @@ async def test_full_ha_setup_static_resource_entities_and_reload(
     coordinator = entry.runtime_data
     resources = hass.data["lovelace"].resources
     assert any(
-        item["url"] == "/omada_guest_access/omada-guest-access-card.js?v=1.4.2"
+            item["url"] == "/omada_guest_access/omada-guest-access-card.js?v=1.4.3"
         and item["type"] == "module"
         for item in resources.async_items()
     )
