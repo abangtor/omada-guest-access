@@ -106,8 +106,17 @@ class OmadaExternalPortalClient:
             self._session.detach()
 
     async def async_test_connection(self) -> None:
+        """Establish an operator session once; do not churn it on coordinator polls.
+
+        Omada's Hotspot Operator endpoint creates a new controller session for
+        every login. Repeating that login as a health check can invalidate an
+        otherwise working session (and eventually creates a false reauth
+        repair). API operations already retry once after a genuine expired
+        session response, which is the appropriate time to log in again.
+        """
         async with self._lock:
-            await self._async_login()
+            if not self._csrf_token:
+                await self._async_login()
 
     async def async_authorize(self, context: PortalContext, duration_hours: int) -> datetime | None:
         """Return the exact expiry sent to Omada, not a later local estimate."""

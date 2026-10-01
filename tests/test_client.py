@@ -71,6 +71,28 @@ async def test_cookie_csrf_session_retry_and_exact_expiry(hass, config, context,
     assert client._session.closed
 
 
+async def test_health_check_reuses_an_existing_operator_session(hass, config, aiohttp_server, socket_enabled):
+    """Coordinator polls must not repeatedly log an operator into Omada."""
+    logins = []
+
+    async def login(request):
+        logins.append(await request.json())
+        return web.json_response({"errorCode": 0, "result": {"token": "csrf"}})
+
+    app = web.Application()
+    app.router.add_post("/controller/api/v2/hotspot/login", login)
+    server = await aiohttp_server(app)
+    config["controller_url"] = str(server.make_url("/controller/"))
+    client = OmadaExternalPortalClient(hass, config)
+    try:
+        await client.async_test_connection()
+        await client.async_test_connection()
+        await client.async_test_connection()
+        assert len(logins) == 1
+    finally:
+        await client.async_close()
+
+
 @pytest.mark.parametrize(
     "body,status,error",
     [
