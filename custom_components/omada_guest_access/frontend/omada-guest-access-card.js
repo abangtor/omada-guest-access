@@ -83,6 +83,9 @@ class OmadaGuestAccessCard extends HTMLElement {
     this._historyGeneration = 0;
     this._expandedHistory = new Map();
     this._selectedDurations = new Map();
+    this._pendingState = undefined;
+    this._activeState = undefined;
+    this._renderQueued = false;
   }
   setConfig(config) {
     if (!config.pending_entity || !config.active_entity) {
@@ -112,12 +115,20 @@ class OmadaGuestAccessCard extends HTMLElement {
     this._historyQuery = ''; this._historyStatus = '';
     this._error = '';
     this._config = {...CARD_DEFAULTS, ...config, duration_hours: hours, history_page_size: pageSize};
-    this._signature = null;
+    this._pendingState = undefined;
+    this._activeState = undefined;
     if (this._hass) this.hass = this._hass;
   }
   set hass(hass) {
-    const entry = hass.states[this._config?.pending_entity]?.attributes.entry_id;
+    if (!this._config) { this._hass = hass; return; }
+    const pending = hass.states[this._config.pending_entity];
+    const active = hass.states[this._config.active_entity];
+    const entry = pending?.attributes?.entry_id;
     const identity = JSON.stringify([hass.user?.id, hass.user?.is_admin === true, entry]);
+    // Also notice the small permission flag when a test harness or an
+    // integration mutates attributes in place. Normal HA state updates replace
+    // the entity object, so this remains a lightweight check.
+    const permissionMarker = (pending?.attributes?.decision_user_ids || []).join('|');
     if (identity !== this._identity) {
       this._identity = identity;
       this._historyGeneration++;
@@ -130,10 +141,36 @@ class OmadaGuestAccessCard extends HTMLElement {
       this._historyOffset = 0;
       this._historyQuery = ''; this._historyStatus = '';
     }
-    const signature = JSON.stringify([identity, hass.states[this._config?.pending_entity],
-      hass.states[this._config?.active_entity]]);
     this._hass = hass;
-    if (signature !== this._signature) { this._signature = signature; this._render(); }
+    // HA creates a new hass object for every state event. Never stringify the
+    // complete request/session attributes here: unrelated events must not
+    // cause expensive work that can stall a mobile dashboard.
+    if (pending === this._pendingState && active === this._activeState &&
+        identity === this._renderIdentity && permissionMarker === this._permissionMarker) return;
+    this._pendingState = pending;
+    this._activeState = active;
+    this._renderIdentity = identity;
+    this._permissionMarker = permissionMarker;
+    this._queueRender();
+  }
+  _queueRender() {
+    if (this._renderQueued) return;
+    this._renderQueued = true;
+    // Rendering synchronously preserves Lovelace's normal card lifecycle.
+    // The lightweight state-reference check in hass() avoids redraws for
+    // unrelated HA state events.
+    try { this._render(); }
+    catch (err) { this._renderFailure(err); }
+    finally { this._renderQueued = false; }
+  }
+  _renderFailure(err) {
+    const root = this.shadowRoot;
+    root.replaceChildren();
+    this._node('style', 'ha-card{padding:16px}.error{color:var(--error-color)}', root);
+    const card = this._node('ha-card', undefined, root);
+    this._node('p', 'Omada Guest Access card could not render. Reload the dashboard after updating the card.', card).className = 'error';
+    // Keep the useful diagnostic in the browser console without leaking guest data.
+    console.error('Omada Guest Access card render failed', err);
   }
   _clearHistoryDetails() {
     this._expandedHistory.clear();
