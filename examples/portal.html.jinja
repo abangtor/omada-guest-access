@@ -9,7 +9,9 @@
   <style>
     :root { color-scheme: light; }
     * { box-sizing: border-box; }
+    /* Reset the built-in portal body width before centering the card. */
     body {
+      width: 100%; max-width: none;
       min-height: 100vh; margin: 0; display: grid; place-items: center;
       padding: 24px; color: #12233f;
       background:

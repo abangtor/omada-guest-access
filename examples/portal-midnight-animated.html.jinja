@@ -8,7 +8,8 @@
   {{ style_html }}
   <style>
     :root { color-scheme:dark; --accent:{{ accent }}; } * { box-sizing:border-box; }
-    body { min-height:100vh; margin:0; padding:24px; display:grid; place-items:center; overflow-x:hidden; color:#edf4ff; background:#050a13; font:16px/1.55 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    /* Reset the built-in portal body width before centering the card. */
+    body { width:100%; max-width:none; min-height:100vh; margin:0; padding:24px; display:grid; place-items:center; overflow-x:hidden; color:#edf4ff; background:#050a13; font:16px/1.55 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
     body::before,body::after { content:""; position:fixed; z-index:-2; width:52vmax; aspect-ratio:1; border-radius:45% 55% 54% 46% / 38% 47% 53% 62%; filter:blur(12px); pointer-events:none; }
     body::before { top:-29vmax; left:-21vmax; background:color-mix(in srgb,var(--accent) 43%,transparent); animation:orbit-one 20s ease-in-out infinite alternate; } body::after { right:-28vmax; bottom:-26vmax; background:color-mix(in srgb,var(--accent) 22%,#34308c); animation:orbit-two 24s ease-in-out infinite alternate; }
     .stars { position:fixed; inset:0; z-index:-1; opacity:.42; pointer-events:none; background-image:radial-gradient(circle at 15% 20%,white 0 1px,transparent 1.5px),radial-gradient(circle at 75% 38%,white 0 1px,transparent 1.5px),radial-gradient(circle at 40% 82%,white 0 .8px,transparent 1.3px); background-size:240px 220px,310px 290px,180px 160px; animation:stars 18s linear infinite; }
