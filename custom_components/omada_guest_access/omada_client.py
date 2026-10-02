@@ -135,7 +135,13 @@ class OmadaExternalPortalClient:
                 await self._async_login()
                 started = dt_util.utcnow()
                 await self._async_raw_request("/hotspot/extPortal/auth", payload, csrf=True)
-            return started + timedelta(microseconds=int(payload["time"]))
+            # ``time`` is sent to Omada in milliseconds.  Do not derive the
+            # local expiry from that wire value as a microsecond count: doing
+            # so makes a 24-hour grant appear to expire after 86.4 seconds in
+            # Home Assistant.  The requested duration is the source of truth
+            # for this local display/cleanup estimate.
+            expires_in = timedelta(days=FOREVER_DURATION_DAYS) if duration_hours == 0 else timedelta(hours=duration_hours)
+            return started + expires_in
 
     async def async_revoke(self, context: PortalContext) -> None:
         """Deauthorize using Hotspot Manager, then confirm the record is inactive.

@@ -74,7 +74,8 @@ async def test_cookie_csrf_session_retry_and_exact_expiry(
         after = dt_util.utcnow()
         assert len(logins) == 2
         assert len(authorizations) == 2
-        assert [request["time"] for request in authorizations] == ["28800000000"] * 2
+        # Omada 6.x accepts a relative duration in milliseconds.
+        assert [request["time"] for request in authorizations] == ["28800000"] * 2
         assert before + timedelta(hours=8) <= expires <= after + timedelta(hours=8)
     finally:
         await client.async_close()

@@ -51,7 +51,7 @@ def test_external_portal_payload_uses_documented_wireless_fields() -> None:
     assert payload["apMac"] == context.ap_mac
     assert "gatewayMac" not in payload
     assert isinstance(payload["time"], str)
-    assert payload["time"] == "28800000000"
+    assert payload["time"] == "28800000"
 
 
 @pytest.mark.parametrize("hours,expected", [(1, "3600000000"), (8, "28800000000"),
