@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#080c18">
+  <title>{{ title }}</title>
+  {{ style_html }}
+  <style>
+    :root {
+      color-scheme:dark;
+      --accent:{{ accent }};
+      --mist:color-mix(in srgb,var(--accent) 38%,#d8eaff);
+      --ink:#080c18;
+      --text:#edf2fc;
+      --muted:#adbad1;
+    }
+    * { box-sizing:border-box; }
+    [hidden] { display:none !important; }
+    body {
+      width:100%; max-width:none; min-height:100vh; min-height:100svh;
+      margin:0; padding:clamp(20px,5vw,56px); display:grid; place-items:center;
+      isolation:isolate; color:var(--text); background:var(--ink);
+      font:16px/1.55 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    }
+    /* Decorative motion only: no script, network assets, or moving form controls. */
+    .cosmos { position:fixed; inset:0; overflow:hidden; z-index:-1; pointer-events:none; contain:strict; }
+    .cosmos::after {
+      content:""; position:absolute; inset:0;
+      background:radial-gradient(ellipse at 50% 42%,transparent 15%,rgba(8,12,24,.38) 70%,#080c18);
+    }
+    .nebula {
+      position:absolute; width:100vmax; height:70vmax; left:calc(50% - 50vmax); top:calc(50% - 35vmax);
+      background:radial-gradient(ellipse at 28% 34%,color-mix(in srgb,var(--accent) 30%,transparent),transparent 48%),
+                 radial-gradient(ellipse at 72% 62%,color-mix(in srgb,var(--mist) 16%,transparent),transparent 48%);
+      animation:nebula-drift 48s ease-in-out infinite alternate;
+    }
+    .ribbon {
+      position:absolute; left:-30%; top:15%; width:160%; height:50%;
+      border-radius:50%; border-top:1px solid color-mix(in srgb,var(--mist) 26%,transparent);
+      background:radial-gradient(ellipse at 50% 0%,color-mix(in srgb,var(--accent) 18%,transparent),transparent 65%);
+      transform:rotate(-28deg); animation:ribbon-drift 36s ease-in-out infinite alternate;
+    }
+    .ribbon.two { top:32%; opacity:.65; animation-duration:47s; animation-delay:-18s; }
+    .ribbon.three { top:48%; opacity:.4; animation-duration:58s; animation-delay:-29s; }
+    .orbit-plane { position:absolute; left:50%; top:50%; width:112vmax; height:112vmax; transform:translate(-50%,-50%) rotate(-32deg) scaleY(.58); }
+    .orbit {
+      position:absolute; inset:0; border:1px solid color-mix(in srgb,var(--mist) 12%,transparent);
+      border-radius:50%; animation:orbit-turn 110s linear infinite;
+    }
+    .orbit::before {
+      content:""; position:absolute; left:50%; top:-3px; width:5px; height:5px; border-radius:50%;
+      background:var(--mist); box-shadow:0 0 14px 3px color-mix(in srgb,var(--accent) 50%,transparent);
+    }
+    .orbit.two { inset:10%; opacity:.7; animation-duration:145s; animation-direction:reverse; }
+    .orbit.three { inset:21%; opacity:.45; animation-duration:185s; animation-delay:-65s; }
+    .stardust { position:absolute; inset:0; animation:dust-drift 55s ease-in-out infinite alternate; }
+    .stardust i { position:absolute; width:2px; height:2px; border-radius:50%; background:var(--mist); opacity:.5; box-shadow:0 0 8px var(--accent); }
+    .stardust i:nth-child(1) { left:12%; top:18%; }
+    .stardust i:nth-child(2) { left:26%; top:69%; }
+    .stardust i:nth-child(3) { left:82%; top:24%; }
+    .stardust i:nth-child(4) { left:74%; top:81%; }
+    .stardust i:nth-child(5) { left:8%; top:88%; }
+    .stardust i:nth-child(6) { left:92%; top:57%; }
+    .stardust i:nth-child(7) { left:56%; top:9%; }
+    .stardust i:nth-child(8) { left:43%; top:92%; }
+    .portal-shell { width:min(100%,540px); min-width:0; margin-inline:auto; }
+    .brand { display:flex; align-items:center; gap:12px; margin:0 6px 20px; }
+    .mark {
+      display:grid; place-items:center; flex:0 0 44px; height:44px; border-radius:15px;
+      border:1px solid color-mix(in srgb,var(--mist) 32%,transparent);
+      background:color-mix(in srgb,var(--accent) 16%,#101a2b); color:var(--mist);
+      box-shadow:0 0 32px color-mix(in srgb,var(--accent) 14%,transparent);
+    }
+    .mark svg { width:24px; height:24px; }
+    .brand-text { display:grid; gap:2px; }
+    .brand-text strong { color:#dee8fb; font-size:.76rem; letter-spacing:.14em; font-weight:650; text-transform:uppercase; }
+    .brand-text span { color:var(--muted); font-size:.72rem; letter-spacing:.025em; }
+    main {
+      position:relative; width:100%; max-width:none; margin:0;
+      padding:clamp(24px,6vw,42px); overflow:hidden; border-radius:28px;
+      border:1px solid color-mix(in srgb,var(--mist) 23%,transparent);
+      background:linear-gradient(155deg,rgba(24,34,54,.96),rgba(10,17,31,.97));
+      box-shadow:0 32px 100px rgba(0,0,0,.42),inset 0 1px 0 rgba(255,255,255,.06);
+    }
+    main::before {
+      content:""; position:absolute; top:0; left:12%; right:12%; height:1px;
+      background:linear-gradient(90deg,transparent,var(--mist),transparent); opacity:.8;
+    }
+    .eyebrow { margin:0 0 12px; color:var(--mist); font-size:.67rem; font-weight:650; letter-spacing:.2em; text-transform:uppercase; }
+    h1 { margin:0; color:var(--text); font-size:clamp(1.85rem,6vw,2.65rem); line-height:1.12; letter-spacing:-.045em; overflow-wrap:anywhere; }
+    .intro { margin:14px 0 26px; color:var(--muted); font-size:.97rem; line-height:1.65; }
+    form { display:grid; gap:18px; margin:0; }
+    form label { display:grid; gap:8px; color:#dce5f5; font-size:.85rem; font-weight:550; }
+    form input:not([type=checkbox]),form textarea {
+      width:100%; margin:0; padding:13px 15px; color:var(--text); font:inherit; font-size:1rem;
+      border:1px solid #354157; border-radius:13px; background:rgba(5,12,24,.7);
+      transition:border-color .2s ease,box-shadow .2s ease;
+    }
+    form textarea { min-height:108px; resize:vertical; }
+    form input:focus-visible,form textarea:focus-visible {
+      outline:2px solid var(--mist); outline-offset:3px; border-color:var(--mist);
+      box-shadow:0 0 0 5px color-mix(in srgb,var(--accent) 12%,transparent);
+    }
+    form .consent { display:flex; align-items:flex-start; gap:10px; margin:0; font-size:.78rem; font-weight:400; line-height:1.5; color:var(--muted); }
+    form input[type=checkbox] { width:18px; height:18px; flex:0 0 18px; margin:2px 0 0; accent-color:var(--accent); }
+    button[type=submit],#continue-internet {
+      display:block; width:100%; margin:4px 0 0; padding:15px 18px; border:1px solid var(--mist);
+      border-radius:13px; background:linear-gradient(115deg,color-mix(in srgb,var(--accent) 40%,#dce9ff),var(--mist));
+      color:#08111e; font-family:inherit; font-size:.95rem; font-weight:750; line-height:1.4;
+      text-align:center; text-decoration:none; cursor:pointer;
+      box-shadow:0 8px 26px color-mix(in srgb,var(--accent) 16%,transparent);
+      transition:box-shadow .2s ease,filter .2s ease;
+    }
+    button[type=submit]:hover,#continue-internet:hover { filter:brightness(1.08); box-shadow:0 8px 32px color-mix(in srgb,var(--accent) 26%,transparent); }
+    button:disabled { opacity:.6; cursor:wait; }
+    #forget-details { width:auto; margin:0; padding:8px; border:0; background:none; color:var(--muted); font:inherit; font-size:.76rem; text-decoration:underline; cursor:pointer; }
+    #status { margin:22px 0 0; padding:14px 16px; border:1px solid #354157; border-radius:13px; color:#dce5f5; font-size:.92rem; background:rgba(5,12,24,.5); }
+    #status:empty { display:none; }
+    #continue-internet { margin-top:18px; }
+    #terms { margin:0; padding:12px 14px; background:rgba(5,12,24,.5); border:1px solid #354157; border-radius:13px; font-size:.8rem; color:var(--muted); }
+    summary { cursor:pointer; color:#dce5f5; }
+    :is(button,a,summary):focus-visible { outline:2px solid var(--mist); outline-offset:4px; }
+    footer { margin:20px 6px 0; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; color:var(--muted); font-size:.71rem; }
+    .motion-control { display:inline-flex; align-items:center; gap:7px; cursor:pointer; }
+    .motion-control input { width:15px; height:15px; margin:0; padding:0; accent-color:var(--accent); }
+    body:has(#pause-motion:checked) .cosmos * { animation-play-state:paused; }
+    @keyframes nebula-drift { from { transform:rotate(-8deg) scale(1); } to { transform:rotate(14deg) scale(1.1); } }
+    @keyframes ribbon-drift { from { transform:translateY(-3%) rotate(-28deg); } to { transform:translateY(12%) rotate(-13deg); } }
+    @keyframes orbit-turn { to { transform:rotate(360deg); } }
+    @keyframes dust-drift { to { transform:translate(12px,-18px); } }
+    @media (max-width:540px) {
+      body { padding:24px 16px; }
+      main { border-radius:23px; }
+      .orbit-plane { width:155vmax; height:155vmax; }
+      .ribbon.three { display:none; }
+    }
+    @media (prefers-reduced-motion:reduce) {
+      *,*::before,*::after { animation:none !important; transition:none !important; }
+      .motion-control { display:none; }
+    }
+    @media (forced-colors:active) { .cosmos { display:none; } main { border:1px solid CanvasText; } }
+  </style>
+</head>
+<body>
+  <div class="cosmos" aria-hidden="true">
+    <div class="nebula"></div>
+    <div class="ribbon"></div><div class="ribbon two"></div><div class="ribbon three"></div>
+    <div class="orbit-plane"><div class="orbit"></div><div class="orbit two"></div><div class="orbit three"></div></div>
+    <div class="stardust"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+  </div>
+  <div class="portal-shell">
+    <div class="brand">
+      <div class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 9a13 13 0 0 1 18 0M6 12a8.5 8.5 0 0 1 12 0M9.5 15.5a3.5 3.5 0 0 1 5 0"/><circle cx="12" cy="19" r=".8" fill="currentColor" stroke="none"/></svg></div>
+      <div class="brand-text"><strong>Private network</strong><span>A little space to connect.</span></div>
+    </div>
+    <main>
+      <p class="eyebrow">Make yourself at home</p>
+      <h1>{{ title }}</h1>
+      <p class="intro">{{ message }}</p>
+      {{ form_html }}
+      {{ status_html }}
+    </main>
+    <footer><span>Your connection starts here.</span><label class="motion-control"><input id="pause-motion" type="checkbox">Pause background</label></footer>
+  </div>
+  {{ script_html }}
+</body>
+</html>
