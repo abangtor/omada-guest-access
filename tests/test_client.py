@@ -70,7 +70,7 @@ async def test_cookie_csrf_session_retry_and_exact_expiry(
         expires = await client.async_authorize(context, 8)
         assert len(logins) == 2
         assert len(authorizations) == 2
-        assert authorizations[-1]["time"] == int(expires.timestamp() * 1_000_000)
+        assert authorizations[-1]["time"] == str(int(expires.timestamp() * 1_000_000))
     finally:
         await client.async_close()
     assert client._session.closed

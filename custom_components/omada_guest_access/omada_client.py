@@ -319,7 +319,12 @@ def _authorization_payload(
     payload: dict[str, str | int] = {
         "clientMac": context.client_mac,
         "site": context.site,
-        "time": int(expires.timestamp() * 1_000_000),
+        # The v5/v6 External Portal API documentation specifies ``time`` as
+        # a JSON *string*, despite it representing a microsecond Unix epoch.
+        # Omada 6.0 accepts a numeric JSON value with HTTP 200, but can then
+        # silently persist it as zero — resulting in an immediately expired
+        # authorization. Keep this a decimal string exactly as documented.
+        "time": str(int(expires.timestamp() * 1_000_000)),
         "authType": 4,
     }
     if context.is_wireless:

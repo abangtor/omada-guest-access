@@ -50,7 +50,8 @@ def test_external_portal_payload_uses_documented_wireless_fields() -> None:
     assert payload["clientMac"] == context.client_mac
     assert payload["apMac"] == context.ap_mac
     assert "gatewayMac" not in payload
-    assert isinstance(payload["time"], int)
+    assert isinstance(payload["time"], str)
+    assert int(payload["time"]) > 2_000_000_000_000_000
 
 
 def test_forever_authorization_uses_a_long_term_future_timestamp():
@@ -58,5 +59,5 @@ def test_forever_authorization_uses_a_long_term_future_timestamp():
     payload = _authorization_payload(context, 0)
     # Omada interprets time as an absolute timestamp in microseconds; zero
     # is 1970-01-01, so the Forever preset must be a far-future grant.
-    assert payload["time"] > 2_000_000_000_000_000
+    assert int(payload["time"]) > 2_000_000_000_000_000
     assert payload["gatewayMac"] == context.gateway_mac
