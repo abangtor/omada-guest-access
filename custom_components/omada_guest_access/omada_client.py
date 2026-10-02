@@ -120,28 +120,22 @@ class OmadaExternalPortalClient:
                 await self._async_login()
 
     async def async_authorize(self, context: PortalContext, duration_hours: int) -> datetime | None:
-        """Return the exact expiry sent to Omada, not a later local estimate."""
+        """Authorize for a relative duration and return the estimated local expiry."""
         if not 0 <= duration_hours <= 720:
             raise ValueError("Access duration must be 0 (Forever) or between 1 and 720 hours")
         async with self._lock:
             if not self._csrf_token:
                 await self._async_login()
-            # Omada's External Portal API needs an *absolute* expiration
-            # timestamp in microseconds.  It has no no-expiry sentinel:
-            # sending time=0 represents 1970-01-01 and expires immediately.
-            # Treat the UI's Forever preset as a transparent long-term
-            # (10-year) controller grant instead.
-            expires = dt_util.utcnow() + timedelta(
-                days=FOREVER_DURATION_DAYS if duration_hours == 0 else 0,
-                hours=0 if duration_hours == 0 else duration_hours,
-            )
-            payload = _authorization_payload(context, duration_hours, expires=expires)
+            # The controller consumes a relative duration, not Unix epoch time.
+            payload = _authorization_payload(context, duration_hours)
+            started = dt_util.utcnow()
             try:
                 await self._async_raw_request("/hotspot/extPortal/auth", payload, csrf=True)
             except OmadaAuthError:
                 await self._async_login()
+                started = dt_util.utcnow()
                 await self._async_raw_request("/hotspot/extPortal/auth", payload, csrf=True)
-            return expires
+            return started + timedelta(microseconds=int(payload["time"]))
 
     async def async_revoke(self, context: PortalContext) -> None:
         """Deauthorize using Hotspot Manager, then confirm the record is inactive.
@@ -309,22 +303,15 @@ class OmadaExternalPortalClient:
         return result
 
 
-def _authorization_payload(
-    context: PortalContext, duration_hours: int, *, expires: datetime | None = None
-) -> dict[str, str | int]:
-    if duration_hours == 0:
-        expires = expires or dt_util.utcnow() + timedelta(days=FOREVER_DURATION_DAYS)
-    else:
-        expires = expires or dt_util.utcnow() + timedelta(hours=duration_hours)
+def _authorization_payload(context: PortalContext, duration_hours: int) -> dict[str, str | int]:
+    if not 0 <= duration_hours <= 720:
+        raise ValueError("Access duration must be 0 (Forever) or between 1 and 720 hours")
+    seconds = FOREVER_DURATION_DAYS * 86400 if duration_hours == 0 else duration_hours * 3600
     payload: dict[str, str | int] = {
         "clientMac": context.client_mac,
         "site": context.site,
-        # The v5/v6 External Portal API documentation specifies ``time`` as
-        # a JSON *string*, despite it representing a microsecond Unix epoch.
-        # Omada 6.0 accepts a numeric JSON value with HTTP 200, but can then
-        # silently persist it as zero — resulting in an immediately expired
-        # authorization. Keep this a decimal string exactly as documented.
-        "time": str(int(expires.timestamp() * 1_000_000)),
+        # Decimal-string duration in microseconds, NOT an absolute timestamp.
+        "time": str(seconds * 1_000_000),
         "authType": 4,
     }
     if context.is_wireless:

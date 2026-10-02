@@ -15,5 +15,5 @@
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/abangtor/omada-guest-access/issues",
   "requirements": [],
-  "version": "1.4.7"
+  "version": "1.4.8"
 }

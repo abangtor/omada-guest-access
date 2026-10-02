@@ -1,9 +1,11 @@
 """Exercise HTTP cookies/CSRF/retry and strict controller response handling."""
 
+from datetime import timedelta
 from unittest.mock import patch
 
 import pytest
 from aiohttp import web
+from homeassistant.util import dt as dt_util
 
 from custom_components.omada_guest_access.omada_client import (
     OmadaApiError,
@@ -67,10 +69,13 @@ async def test_cookie_csrf_session_retry_and_exact_expiry(
     config["controller_url"] = str(server.make_url("/controller/"))
     client = OmadaExternalPortalClient(hass, config)
     try:
+        before = dt_util.utcnow()
         expires = await client.async_authorize(context, 8)
+        after = dt_util.utcnow()
         assert len(logins) == 2
         assert len(authorizations) == 2
-        assert authorizations[-1]["time"] == str(int(expires.timestamp() * 1_000_000))
+        assert [request["time"] for request in authorizations] == ["28800000000"] * 2
+        assert before + timedelta(hours=8) <= expires <= after + timedelta(hours=8)
     finally:
         await client.async_close()
     assert client._session.closed

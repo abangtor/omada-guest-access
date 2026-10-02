@@ -24,10 +24,8 @@ DEFAULT_VERIFY_SSL: Final = True
 DEFAULT_DURATION_HOURS: Final = 8
 DEFAULT_PENDING_TIMEOUT_MINUTES: Final = 15
 DEFAULT_RETENTION_DAYS: Final = 30
-# Omada's External Portal API requires an absolute expiration timestamp.
-# It has no no-expiry sentinel: a timestamp of 0 is 1970-01-01 and therefore
-# expires immediately.  The UI's "Forever" preset is consequently a
-# controller-compatible long-term grant, rather than a literal no-expiry one.
+# Forever remains a finite 3650-day duration; zero expires immediately.
+# Controller acceptance of such long grants still needs live verification.
 FOREVER_DURATION_DAYS: Final = 3650
 
 SERVICE_APPROVE_REQUEST: Final = "approve_request"

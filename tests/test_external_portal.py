@@ -51,13 +51,14 @@ def test_external_portal_payload_uses_documented_wireless_fields() -> None:
     assert payload["apMac"] == context.ap_mac
     assert "gatewayMac" not in payload
     assert isinstance(payload["time"], str)
-    assert int(payload["time"]) > 2_000_000_000_000_000
+    assert payload["time"] == "28800000000"
 
 
-def test_forever_authorization_uses_a_long_term_future_timestamp():
-    context = PortalContext(client_mac="AA:BB:CC:DD:EE:FF", site="Default", gateway_mac="11:22:33:44:55:66", vlan_id="90")
-    payload = _authorization_payload(context, 0)
-    # Omada interprets time as an absolute timestamp in microseconds; zero
-    # is 1970-01-01, so the Forever preset must be a far-future grant.
-    assert int(payload["time"]) > 2_000_000_000_000_000
-    assert payload["gatewayMac"] == context.gateway_mac
+@pytest.mark.parametrize("hours,expected", [(1, "3600000000"), (8, "28800000000"),
+    (24, "86400000000"), (168, "604800000000"), (0, "315360000000000")])
+@pytest.mark.parametrize("wireless", [True, False])
+def test_authorization_sends_relative_duration(hours, expected, wireless):
+    context = PortalContext(client_mac="AA:BB:CC:DD:EE:FF", site="Default",
+        **({"ap_mac": "11:22:33:44:55:66", "ssid_name": "Wi-Fi", "radio_id": "1"}
+           if wireless else {"gateway_mac": "11:22:33:44:55:66", "vlan_id": "90"}))
+    assert _authorization_payload(context, hours)["time"] == expected

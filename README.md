@@ -125,7 +125,7 @@ The Jinja environment is sandboxed and autoescaped. It receives **no HA state/fu
 In integration options, set:
 
 - **Default access duration:** `8` hours by default. Used by service calls with no duration and by cards without a duration override.
-- **Approval dropdown presets:** `1,2,4,8,12,24,48,72,168,0` by default. Use `0` for **Forever** (a controller-compatible 10-year grant; Omada has no no-expiry timestamp); otherwise use comma-separated whole hours from **1 to 168 (one week)**. These are UI suggestions, not a permission policy; explicit administrator service calls accept `0` or 1–720 hours.
+- **Approval dropdown presets:** `1,2,4,8,12,24,48,72,168,0` by default. Use `0` for **Forever** (a finite 3650-day duration; controller acceptance still needs live verification); otherwise use comma-separated whole hours from **1 to 168 (one week)**. These are UI suggestions, not a permission policy; explicit administrator service calls accept `0` or 1–720 hours.
 - **Enable guest deauthentication:** on by default. Adds **Cancel access** for active grants. It uses the same operator credentials to discover the active External Portal grant, calls Hotspot Manager's disconnect command, and confirms that no matching grant remains active before marking the request revoked. A failure leaves the local grant unchanged and shows an error.
 
 A cancellation removes portal internet authorization; it does not necessarily disassociate the radio/Wi-Fi link. Guest access is denied until a new authorization is issued. If the operator lacks permission, the record is missing/ambiguous, or the controller still reports it active, use Hotspot Manager to inspect it. A timeout after the command may have cancelled access even though HA reports uncertainty; do not treat the local grant list as authoritative live state.
@@ -330,3 +330,14 @@ Before production, check your specific controller and guest devices:
 6. Use **Cancel access** on a test guest and confirm internet traffic stops and the Omada record is inactive. Verify operator permissions; no live deauthentication has been performed by the test suite. Manual controller changes still are not continuously reconciled into the local grant list.
 
 GitHub Actions runs HACS validation, hassfest, Ruff, the Python test suite, and the Chromium browser smoke test (mocked HA/controller traffic).
+
+## Upgrade notes for 1.4.8
+
+Authorization now sends a relative duration in microseconds as a decimal string,
+not an absolute Unix timestamp. For example, 24 hours sends `"86400000000"`.
+Local expiry remains approval time plus the requested duration. The prior epoch
+encoding could produce excessively long grants. Update in HACS and restart HA;
+existing controller grants are not retroactively corrected. End incorrect grants
+in Hotspot Manager and submit a fresh request. Verify with a one-hour approval
+that Omada records expiry one hour after authorization before using longer grants.
+Forever is a finite 3650-day request, not a verified unlimited-access sentinel.
