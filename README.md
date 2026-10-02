@@ -102,7 +102,7 @@ Use **Forget all local guest records** when you have removed guests directly in 
 
 ### Full-page Jinja layouts
 
-Paste [examples/portal.html.jinja](examples/portal.html.jinja) or the darker [examples/portal-midnight.html.jinja](examples/portal-midnight.html.jinja) into **Full portal Jinja template** in integration options. Leave it blank to restore the built-in layout. The template is stored in the config entry, not loaded from a filesystem path. Both initial and resumed-request layouts are validated on save; template errors are reported in the options dialog.
+Paste [examples/portal.html.jinja](examples/portal.html.jinja), [portal-animated.html.jinja](examples/portal-animated.html.jinja), [portal-midnight.html.jinja](examples/portal-midnight.html.jinja), or [portal-midnight-animated.html.jinja](examples/portal-midnight-animated.html.jinja) into **Full portal Jinja template** in integration options. The animated variants use the configured accent color and honour reduced-motion preferences. Leave it blank to restore the built-in layout. The template is stored in the config entry, not loaded from a filesystem path. Both initial and resumed-request layouts are validated on save; template errors are reported in the options dialog.
 
 Available variables:
 
