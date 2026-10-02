@@ -310,8 +310,8 @@ def _authorization_payload(context: PortalContext, duration_hours: int) -> dict[
     payload: dict[str, str | int] = {
         "clientMac": context.client_mac,
         "site": context.site,
-        # Decimal-string duration in microseconds, NOT an absolute timestamp.
-        "time": str(seconds * 1_000_000),
+        # Decimal-string duration in milliseconds, NOT an absolute timestamp.
+        "time": str(seconds * 1_000),
         "authType": 4,
     }
     if context.is_wireless:
