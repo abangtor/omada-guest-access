@@ -40,7 +40,10 @@ def test_reject_invalid_url(url, identifier):
         normalize_controller_url(url, identifier)
 
 
-async def test_cookie_csrf_session_retry_and_exact_expiry(hass, config, context, aiohttp_server, socket_enabled):
+@pytest.mark.parametrize("expired_response", ["json", "redirect"])
+async def test_cookie_csrf_session_retry_and_exact_expiry(
+    hass, config, context, aiohttp_server, socket_enabled, expired_response
+):
     logins, authorizations = [], []
 
     async def login(request):
@@ -53,6 +56,8 @@ async def test_cookie_csrf_session_retry_and_exact_expiry(hass, config, context,
         authorizations.append(await request.json())
         assert request.headers["Csrf-Token"] == f"csrf-{len(logins)}"
         assert request.cookies["TPOMADA_SESSIONID"] == f"session-{len(logins)}"
+        if expired_response == "redirect" and len(authorizations) == 1:
+            return web.Response(status=302, headers={"Location": "/controller/hotspot/login"})
         return web.json_response({"errorCode": -1005 if len(authorizations) == 1 else 0})
 
     app = web.Application()
@@ -101,6 +106,7 @@ async def test_health_check_reuses_an_existing_operator_session(hass, config, ai
         ({"errorCode": 0, "result": {}}, 200, OmadaApiError),
         ({"errorCode": -1}, 200, OmadaAuthError),
         ({}, 401, OmadaAuthError),
+        ({}, 302, OmadaApiError),
         ({}, 500, OmadaApiError),
     ],
 )
@@ -181,5 +187,75 @@ async def test_login_error_only_exposes_numeric_code(hass, config, code, aiohttp
         assert 'secret-token' not in detail
         if type(code) is int:
             assert str(code) in detail
+    finally:
+        await client.async_close()
+
+
+@pytest.mark.parametrize("operation", ["authorize", "hotspot"])
+async def test_login_redirect_retry_is_bounded(hass, config, context, aiohttp_server, socket_enabled, operation):
+    calls = {"login": 0, "operation": 0, "redirect": 0}
+
+    async def login(request):
+        calls["login"] += 1
+        return web.json_response({"errorCode": 0, "result": {"token": "fresh"}})
+
+    async def operation_handler(request):
+        calls["operation"] += 1
+        return web.Response(status=302, headers={"Location": "/controller/hotspot/login"})
+
+    async def redirect_handler(request):
+        calls["redirect"] += 1
+        return web.Response(text="must not follow")
+
+    app = web.Application()
+    app.router.add_post("/controller/api/v2/hotspot/login", login)
+    app.router.add_post("/controller/api/v2/hotspot/extPortal/auth", operation_handler)
+    app.router.add_get("/controller/api/v2/hotspot/sites/site/clients", operation_handler)
+    app.router.add_get("/controller/hotspot/login", redirect_handler)
+    server = await aiohttp_server(app)
+    config["controller_url"] = str(server.make_url("/"))
+    client = OmadaExternalPortalClient(hass, config)
+    try:
+        with pytest.raises(OmadaAuthError, match="redirected to login"):
+            if operation == "authorize":
+                await client.async_authorize(context, 8)
+            else:
+                await client._async_authenticated_request("/hotspot/sites/site/clients", method="GET")
+        assert calls == {"login": 2, "operation": 2, "redirect": 0}
+        assert client._csrf_token is None
+    finally:
+        await client.async_close()
+
+
+@pytest.mark.parametrize("location,is_auth", [
+    ("/controller/hotspot/login", True),
+    ("/controller/login#hotspot", True),
+    ("/controller/hotspot/login/", True),
+    ("https://other.example/controller/hotspot/login?secret=hidden", False),
+    ("//other.example/controller/hotspot/login", False),
+    ("/other/hotspot/login", False),
+    ("/controller/api/v2/new-endpoint", False),
+    ("https://[malformed", False),
+    ("", False),
+])
+async def test_redirect_targets_are_restricted(hass, config, aiohttp_server, socket_enabled, location, is_auth):
+    async def handler(request):
+        target = location
+        # Also exercise the absolute same-origin URL emitted by the real controller.
+        if target == "/controller/hotspot/login":
+            target = str(server.make_url(target))
+        return web.Response(status=302, headers={"Location": target})
+
+    app = web.Application()
+    app.router.add_post("/controller/api/v2/hotspot/extPortal/auth", handler)
+    server = await aiohttp_server(app)
+    config["controller_url"] = str(server.make_url("/"))
+    client = OmadaExternalPortalClient(hass, config)
+    client._csrf_token = "stale"
+    try:
+        with pytest.raises(OmadaApiError) as error:
+            await client._async_raw_request("/hotspot/extPortal/auth", {}, csrf=True)
+        assert isinstance(error.value, OmadaAuthError) is is_auth
+        assert "hidden" not in str(error.value)
     finally:
         await client.async_close()

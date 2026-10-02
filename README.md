@@ -245,6 +245,12 @@ recorder:
 
 Guest responses exclude other guests, internal controller context and credentials. Guest pages/status/errors use `Cache-Control: no-store`; the portal disables its own access log. Configure reverse-proxy logging accordingly: the initial query contains MAC addresses and connection details.
 
+## Upgrade notes for 1.4.6
+
+- Fixes authorization failing with HTTP 302 when Omada redirects an expired operator session to its login page. Recognized same-controller login redirects trigger one fresh login and one retry, for authorization and Hotspot Manager actions.
+- Redirects are never followed; unrelated or external redirects remain errors. Repeated login redirects fail without looping or marking a guest approved.
+- Update/redownload in HACS and restart Home Assistant, then retry approval. Existing credentials and guest records are preserved.
+
 ## Upgrade notes for 1.3.2
 
 - In **Settings → Devices & services → Omada Guest Access → Configure**, check **Forget all local guest records** and save to remove stale local records after manual Hotspot Manager changes. This does not deauthenticate Omada guests.

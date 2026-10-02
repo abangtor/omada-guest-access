@@ -11,7 +11,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
-from urllib.parse import quote, urlsplit, urlunsplit
+from urllib.parse import quote, urljoin, urlsplit, urlunsplit
 
 from aiohttp import ClientConnectionError, ClientError, ClientSession, ClientSSLError, ClientTimeout, CookieJar
 from homeassistant.core import HomeAssistant
@@ -250,6 +250,29 @@ class OmadaExternalPortalClient:
             if params is not None:
                 kwargs["params"] = params
             async with request(url, **kwargs) as response:
+                if csrf and response.status in {301, 302, 303, 307, 308}:
+                    # Omada redirects expired operator sessions to its UI login.
+                    # Never follow redirects or forward credentials to the target.
+                    location = response.headers.get("Location", "")
+                    try:
+                        target = urlsplit(urljoin(url, location))
+                        origin = urlsplit(self._base_url)
+                        same_origin = (
+                            target.scheme == origin.scheme
+                            and target.hostname == origin.hostname
+                            and (target.port or (443 if target.scheme == "https" else 80))
+                            == (origin.port or (443 if origin.scheme == "https" else 80))
+                            and not target.username
+                            and not target.password
+                        )
+                    except ValueError:
+                        same_origin = False
+                    if same_origin and target.path.rstrip("/") in {
+                        f"/{self._controller_id}/hotspot/login",
+                        f"/{self._controller_id}/login",
+                    }:
+                        self._csrf_token = None
+                        raise OmadaAuthError("Omada operator session expired (redirected to login)")
                 if response.status in {401, 403}:
                     raise OmadaAuthError(f"Omada rejected authentication (HTTP {response.status})")
                 if response.status != 200:
