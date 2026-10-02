@@ -25,6 +25,7 @@ from .const import (
     CONF_PASSWORD,
     CONF_USERNAME,
     CONF_VERIFY_SSL,
+    FOREVER_DURATION_DAYS,
 )
 
 
@@ -121,14 +122,19 @@ class OmadaExternalPortalClient:
     async def async_authorize(self, context: PortalContext, duration_hours: int) -> datetime | None:
         """Return the exact expiry sent to Omada, not a later local estimate."""
         if not 0 <= duration_hours <= 720:
-            raise ValueError("Access duration must be 0 (no expiry) or between 1 and 720 hours")
+            raise ValueError("Access duration must be 0 (Forever) or between 1 and 720 hours")
         async with self._lock:
             if not self._csrf_token:
                 await self._async_login()
-            # Omada External Portal treats time=0 as no expiry. Keep the
-            # corresponding local record expiry empty so it remains active
-            # until explicitly cancelled in Omada or through this integration.
-            expires = None if duration_hours == 0 else dt_util.utcnow() + timedelta(hours=duration_hours)
+            # Omada's External Portal API needs an *absolute* expiration
+            # timestamp in microseconds.  It has no no-expiry sentinel:
+            # sending time=0 represents 1970-01-01 and expires immediately.
+            # Treat the UI's Forever preset as a transparent long-term
+            # (10-year) controller grant instead.
+            expires = dt_util.utcnow() + timedelta(
+                days=FOREVER_DURATION_DAYS if duration_hours == 0 else 0,
+                hours=0 if duration_hours == 0 else duration_hours,
+            )
             payload = _authorization_payload(context, duration_hours, expires=expires)
             try:
                 await self._async_raw_request("/hotspot/extPortal/auth", payload, csrf=True)
@@ -307,13 +313,13 @@ def _authorization_payload(
     context: PortalContext, duration_hours: int, *, expires: datetime | None = None
 ) -> dict[str, str | int]:
     if duration_hours == 0:
-        expires = None
+        expires = expires or dt_util.utcnow() + timedelta(days=FOREVER_DURATION_DAYS)
     else:
         expires = expires or dt_util.utcnow() + timedelta(hours=duration_hours)
     payload: dict[str, str | int] = {
         "clientMac": context.client_mac,
         "site": context.site,
-        "time": 0 if expires is None else int(expires.timestamp() * 1_000_000),
+        "time": int(expires.timestamp() * 1_000_000),
         "authType": 4,
     }
     if context.is_wireless:
