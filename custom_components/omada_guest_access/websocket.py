@@ -49,7 +49,10 @@ def async_history(hass: HomeAssistant, connection: websocket_api.ActiveConnectio
         if ("status" not in msg or item["status"] == msg["status"])
         and (
             not query
-            or any(query in str(item.get(key, "")).casefold() for key in ("guest_name", "client_mac", "request_id"))
+            or any(
+                query in str(item.get(key, "")).casefold()
+                for key in ("guest_name", "admin_label", "client_mac", "request_id")
+            )
         )
     ]
     rows.sort(key=lambda item: (item["created_at"], item["request_id"]), reverse=True)
@@ -57,6 +60,7 @@ def async_history(hass: HomeAssistant, connection: websocket_api.ActiveConnectio
     fields = (
         "request_id",
         "guest_name",
+        "admin_label",
         "client_mac",
         "note",
         "status",

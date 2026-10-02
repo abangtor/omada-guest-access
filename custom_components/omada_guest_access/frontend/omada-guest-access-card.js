@@ -228,11 +228,12 @@ class OmadaGuestAccessCard extends HTMLElement {
       for (const item of requests) {
         const row = this._node('section', undefined, card); row.className = 'guest-row';
         const info = this._node('div', undefined, row); info.className = 'guest-info';
-        this._node('strong', item.guest_name || 'Guest', info);
+        this._guestName(info, item);
         if (this._config.show_notes && item.note) this._node('p', item.note, info);
         this._metadata(info, item.client_mac, item.expires_at, 'expires');
         if (this._config.show_actions) {
           const actions = this._node('div', undefined, row); actions.className = 'actions';
+          this._labelButton(actions, item, canDecide);
           if (this._config.show_duration_selector && presets.length) {
             const select = this._node('select', undefined, actions);
             select.id = `duration-${item.request_id}`;
@@ -264,11 +265,14 @@ class OmadaGuestAccessCard extends HTMLElement {
       for (const item of sessions) {
         const row = this._node('section', undefined, card); row.className = 'guest-row';
         const info = this._node('div', undefined, row); info.className = 'guest-info';
-        this._node('strong', item.guest_name || 'Guest', info);
+        this._guestName(info, item);
         this._metadata(info, item.client_mac, item.access_expires_at, 'until');
-        if (this._config.show_actions && active.attributes.revoke_supported) {
+        if (this._config.show_actions) {
           const actions = this._node('div', undefined, row); actions.className = 'actions';
-          this._button(actions, 'Cancel access', 'revoke_access', item, {}, !canDecide);
+          this._labelButton(actions, item, canDecide);
+          if (active.attributes.revoke_supported) {
+            this._button(actions, 'Cancel access', 'revoke_access', item, {}, !canDecide);
+          }
         }
       }
       if (this._config.show_notices && sessions.length && !active.attributes.revoke_supported) {
@@ -328,7 +332,7 @@ class OmadaGuestAccessCard extends HTMLElement {
     this._node('p', total ? `Showing ${offset + 1}–${Math.min(offset + requests.length, total)} of ${total}` : 'No matching requests.', card);
     for (const item of requests) {
       const row = this._node('section', undefined, card);
-      this._node('strong', `${item.guest_name || 'Guest'} · ${item.status}`, row);
+      this._node('strong', `${item.admin_label || item.guest_name || 'Guest'} · ${item.status}`, row);
       this._metadata(row, item.client_mac, item.created_at, 'requested');
       if (!this._config.show_history_details) continue;
       const details = this._node('details', undefined, row);
@@ -336,6 +340,7 @@ class OmadaGuestAccessCard extends HTMLElement {
       details.open = this._expandedHistory.get(item.request_id) === true;
       this._node('summary', 'Request details', details);
       this._node('p', `Request ID: ${item.request_id}`, details);
+      if (item.admin_label) this._node('p', `Submitted name: ${item.guest_name || '—'}`, details);
       if (this._config.show_notes && item.note) this._node('p', item.note, details);
       if (this._config.show_timestamps) this._node('p', `Last updated: ${this._date(item.updated_at)}`, details);
       if (this._config.show_timestamps && item.access_expires_at) this._node('p', `Grant until: ${this._date(item.access_expires_at)}`, details);
@@ -382,6 +387,36 @@ class OmadaGuestAccessCard extends HTMLElement {
     if (parts.length) this._node('p', parts.join(' · '), parent);
   }
   _date(value) { return value ? new Date(value).toLocaleString() : '—'; }
+  _guestName(parent, item) {
+    this._node('strong', item.admin_label || item.guest_name || 'Guest', parent);
+    if (item.admin_label && item.guest_name && item.admin_label !== item.guest_name) {
+      this._node('small', `Submitted as: ${item.guest_name}`, parent);
+    }
+  }
+  _labelButton(parent, item, canDecide) {
+    const button = this._node('button', item.admin_label ? 'Rename' : 'Label', parent);
+    button.disabled = !canDecide || this._busy.has(item.request_id);
+    button.addEventListener('click', async () => {
+      const label = window.prompt(
+        'Admin label (leave empty to restore the submitted name):',
+        item.admin_label || item.guest_name || ''
+      );
+      if (label === null) return;
+      if (label.trim().length > 120) {
+        this._error = 'Guest label must be at most 120 characters.'; this._render(); return;
+      }
+      this._busy.add(item.request_id); this._error = ''; this._render();
+      try {
+        await this._hass.callService('omada_guest_access', 'set_guest_label', {
+          request_id: item.request_id, label: label.trim(),
+        });
+      } catch (err) {
+        this._error = err.message || 'Unable to set the guest label.';
+      } finally {
+        this._busy.delete(item.request_id); this._render();
+      }
+    });
+  }
   _button(row, label, service, item, data, disabled) {
     const button = this._node('button', label, row);
     button.disabled = disabled || this._busy.has(item.request_id);

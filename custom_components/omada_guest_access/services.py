@@ -8,7 +8,13 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError, Unauthorized
 from homeassistant.helpers import config_validation as cv
 
-from .const import DOMAIN, SERVICE_APPROVE_REQUEST, SERVICE_DENY_REQUEST, SERVICE_REVOKE_ACCESS
+from .const import (
+    DOMAIN,
+    SERVICE_APPROVE_REQUEST,
+    SERVICE_DENY_REQUEST,
+    SERVICE_REVOKE_ACCESS,
+    SERVICE_SET_GUEST_LABEL,
+)
 
 _REQUEST_ID_SCHEMA = {vol.Required("request_id"): cv.string}
 
@@ -41,6 +47,10 @@ async def async_register_services(hass: HomeAssistant) -> None:
                 await coordinator.async_deny_request(
                     call.data["request_id"], call.data.get("reason"), user_id=call.context.user_id
                 )
+            elif call.service == SERVICE_SET_GUEST_LABEL:
+                await coordinator.async_set_guest_label(
+                    call.data["request_id"], call.data.get("label"), user_id=call.context.user_id
+                )
             else:
                 await coordinator.async_revoke_access(call.data["request_id"], user_id=call.context.user_id)
         except ValueError as err:
@@ -69,6 +79,17 @@ async def async_register_services(hass: HomeAssistant) -> None:
         ),
     )
     hass.services.async_register(DOMAIN, SERVICE_REVOKE_ACCESS, decide, schema=vol.Schema(_REQUEST_ID_SCHEMA))
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_SET_GUEST_LABEL,
+        decide,
+        schema=vol.Schema(
+            {
+                **_REQUEST_ID_SCHEMA,
+                vol.Optional("label", default=""): vol.All(cv.string, vol.Length(max=120)),
+            }
+        ),
+    )
 
 
 async def _can_decide(hass: HomeAssistant, allowed_user_ids: object, call: ServiceCall) -> bool:

@@ -222,6 +222,7 @@ Omit `status` for all statuses. `query` is case-insensitive (maximum 120 charact
 | `omada_guest_access.approve_request` | `request_id`, optional `duration_hours` (`0` for Forever, otherwise 1–720). |
 | `omada_guest_access.deny_request` | `request_id`, optional guest-visible `reason` (up to 500 characters). |
 | `omada_guest_access.revoke_access` | `request_id`; controller deauthentication with confirmation before local revocation. |
+| `omada_guest_access.set_guest_label` | `request_id`, optional `label`; set a local admin label without replacing the submitted name. |
 
 Services accept administrators, users selected in **Users allowed to approve, deny, or cancel guest access**, and trusted HA automation/system contexts. User-initiated decisions persist `decision_user_id`; system decisions have no user ID. Events include `entry_id` for multi-site automation routing.
 

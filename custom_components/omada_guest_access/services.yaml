@@ -33,4 +33,17 @@ revoke_access:
       required: true
       selector:
         text:
+set_guest_label:
+  name: Set guest label
+  description: Set or clear an administrator label without changing the submitted name.
+  fields:
+    request_id:
+      required: true
+      selector:
+        text:
+    label:
+      required: false
+      description: Leave empty to restore the submitted name.
+      selector:
+        text:
 

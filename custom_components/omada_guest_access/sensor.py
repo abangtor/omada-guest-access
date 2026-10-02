@@ -98,6 +98,7 @@ def _request_summary(item: dict) -> dict[str, str | None]:
         for key in (
             "request_id",
             "guest_name",
+            "admin_label",
             "client_mac",
             "note",
             "status",

@@ -56,6 +56,31 @@ async def test_selected_non_admin_can_decide(hass, coordinator, context, hass_re
     assert coordinator.requests[item["request_id"]]["decision_user_id"] == hass_read_only_user.id
 
 
+async def test_selected_non_admin_can_set_guest_label(hass, coordinator, context, hass_read_only_user):
+    """A configured decision user may set or clear an admin display label."""
+    await async_register_services(hass)
+    coordinator.entry._async_set_state(hass, ConfigEntryState.LOADED, None)
+    coordinator.config["decision_user_ids"] = [hass_read_only_user.id]
+    item = await coordinator.async_create_request("A. Visitor", context)
+    await hass.services.async_call(
+        DOMAIN,
+        "set_guest_label",
+        {"request_id": item["request_id"], "label": "Anna from Finance"},
+        blocking=True,
+        context=Context(user_id=hass_read_only_user.id),
+    )
+    assert coordinator.requests[item["request_id"]]["guest_name"] == "A. Visitor"
+    assert coordinator.requests[item["request_id"]]["admin_label"] == "Anna from Finance"
+    await hass.services.async_call(
+        DOMAIN,
+        "set_guest_label",
+        {"request_id": item["request_id"], "label": ""},
+        blocking=True,
+        context=Context(user_id=hass_read_only_user.id),
+    )
+    assert coordinator.requests[item["request_id"]]["admin_label"] is None
+
+
 async def test_automation_skips_unloaded_entries(hass, coordinator, context):
     await async_register_services(hass)
     unloaded = MockConfigEntry(domain=DOMAIN, data={}, title="Unloaded")

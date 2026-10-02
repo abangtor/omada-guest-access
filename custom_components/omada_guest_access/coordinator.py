@@ -174,6 +174,7 @@ class OmadaGuestAccessCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             item = {
                 "request_id": request_id,
                 "guest_name": guest_name.strip(),
+                "admin_label": None,
                 "client_mac": context.client_mac,
                 "note": (note or "").strip() or None,
                 "status": "pending",
@@ -260,6 +261,26 @@ class OmadaGuestAccessCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._event(EVENT_ACCESS_REVOKED, item)
             return deepcopy(item)
 
+    async def async_set_guest_label(
+        self, request_id: str, label: str | None, *, user_id: str | None = None
+    ) -> Mapping[str, Any]:
+        """Set an administrator-only display label without changing the submitted name."""
+        if label is not None and (not isinstance(label, str) or len(label.strip()) > 120):
+            raise ValueError("Guest label must be at most 120 characters")
+        async with self._lock:
+            self._ensure_running()
+            item = self.requests.get(request_id)
+            if item is None:
+                raise ValueError("Unknown guest access request")
+            item.update(
+                admin_label=(label or "").strip() or None,
+                updated_at=dt_util.utcnow(),
+                label_user_id=user_id,
+            )
+            await self._async_save()
+            self._publish()
+            return deepcopy(item)
+
     async def async_forget_all_records(self) -> int:
         """Delete local request history without changing Omada authorizations.
 
@@ -311,6 +332,7 @@ def event_data(request: Mapping[str, Any]) -> dict[str, Any]:
             for key in (
                 "request_id",
                 "guest_name",
+                "admin_label",
                 "client_mac",
                 "status",
                 "created_at",

@@ -28,6 +28,7 @@ DEFAULT_RETENTION_DAYS: Final = 30
 SERVICE_APPROVE_REQUEST: Final = "approve_request"
 SERVICE_DENY_REQUEST: Final = "deny_request"
 SERVICE_REVOKE_ACCESS: Final = "revoke_access"
+SERVICE_SET_GUEST_LABEL: Final = "set_guest_label"
 
 EVENT_REQUEST_CREATED: Final = f"{DOMAIN}_request_created"
 EVENT_REQUEST_APPROVED: Final = f"{DOMAIN}_request_approved"
