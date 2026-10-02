@@ -122,9 +122,6 @@
     summary { cursor:pointer; color:#dce5f5; }
     :is(button,a,summary):focus-visible { outline:2px solid var(--mist); outline-offset:4px; }
     footer { margin:20px 6px 0; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; color:var(--muted); font-size:.71rem; }
-    .motion-control { display:inline-flex; align-items:center; gap:7px; cursor:pointer; }
-    .motion-control input { width:15px; height:15px; margin:0; padding:0; accent-color:var(--accent); }
-    body:has(#pause-motion:checked) .cosmos * { animation-play-state:paused; }
     @keyframes nebula-drift { from { transform:rotate(-8deg) scale(1); } to { transform:rotate(14deg) scale(1.1); } }
     @keyframes ribbon-drift { from { transform:translateY(-3%) rotate(-28deg); } to { transform:translateY(12%) rotate(-13deg); } }
     @keyframes orbit-turn { to { transform:rotate(360deg); } }
@@ -137,7 +134,6 @@
     }
     @media (prefers-reduced-motion:reduce) {
       *,*::before,*::after { animation:none !important; transition:none !important; }
-      .motion-control { display:none; }
     }
     @media (forced-colors:active) { .cosmos { display:none; } main { border:1px solid CanvasText; } }
   </style>
@@ -161,7 +157,7 @@
       {{ form_html }}
       {{ status_html }}
     </main>
-    <footer><span>Your connection starts here.</span><label class="motion-control"><input id="pause-motion" type="checkbox">Pause background</label></footer>
+    <footer><span>Your connection starts here.</span></footer>
   </div>
   {{ script_html }}
 </body>
