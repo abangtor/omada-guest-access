@@ -136,6 +136,7 @@ class GuestPortal:
                 ),
                 "request_id": None,
             }
+            self.coordinator.portal_connected(context, ip)
         request_id = session["request_id"]
         item = self.coordinator.requests.get(request_id) if request_id else None
         if item is None:
@@ -297,6 +298,7 @@ def _portal_context_from_query(query: Any, expected_site: str) -> PortalContext:
         ssid_name=str(query.get("ssidName")) if query.get("ssidName") else None,
         radio_id=str(query.get("radioId")) if query.get("radioId") is not None else None,
         vlan_id=str(query.get("vid")) if query.get("vid") is not None else None,
+        client_ip=_ip_or_none(query.get("clientIp")),
         redirect_url=_safe_redirect_url(query.get("redirectUrl")),
     )
 
@@ -304,6 +306,13 @@ def _portal_context_from_query(query: Any, expected_site: str) -> PortalContext:
 def _mac_or_none(value: Any) -> str | None:
     normalized = str(value or "").upper().replace("-", ":")
     return normalized if _MAC.fullmatch(normalized) else None
+
+
+def _ip_or_none(value: Any) -> str | None:
+    try:
+        return str(ip_address(str(value))) if value else None
+    except ValueError:
+        return None
 
 
 def _safe_redirect_url(value: Any) -> str | None:

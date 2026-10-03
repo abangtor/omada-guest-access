@@ -10,6 +10,7 @@ from dataclasses import asdict
 from datetime import datetime, timedelta
 from hashlib import sha256
 from typing import Any
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 from homeassistant.config_entries import ConfigEntry
@@ -30,6 +31,7 @@ from .const import (
     DOMAIN,
     EVENT_ACCESS_REVOKED,
     EVENT_OMADA_API_ERROR,
+    EVENT_PORTAL_CONNECTED,
     EVENT_REQUEST_APPROVED,
     EVENT_REQUEST_CREATED,
     EVENT_REQUEST_DENIED,
@@ -133,6 +135,34 @@ class OmadaGuestAccessCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     def _event(self, event: str, item: Mapping[str, Any]) -> None:
         self.hass.bus.async_fire(event, {"entry_id": self.entry.entry_id, **event_data(item)})
+
+    def portal_connected(self, context: PortalContext, portal_client_ip: str) -> None:
+        """Notify when a device first opens a valid Omada portal redirect.
+
+        External Portal Server has no controller push/webhook for a mere AP
+        association. This is deliberately emitted only once per portal browser
+        session, rather than on every refresh or polling request.
+        """
+        redirect_hostname = None
+        if context.redirect_url:
+            redirect_hostname = urlsplit(context.redirect_url).hostname
+        self.hass.bus.async_fire(
+            EVENT_PORTAL_CONNECTED,
+            {
+                "entry_id": self.entry.entry_id,
+                "client_mac": context.client_mac,
+                "omada_client_ip": context.client_ip,
+                "portal_client_ip": portal_client_ip,
+                "site": context.site,
+                "connection_type": "wireless" if context.is_wireless else "gateway",
+                "access_point_mac": context.ap_mac,
+                "gateway_mac": context.gateway_mac,
+                "ssid_name": context.ssid_name,
+                "radio_id": context.radio_id,
+                "vlan_id": context.vlan_id,
+                "redirect_hostname": redirect_hostname,
+            },
+        )
 
     def _ensure_running(self) -> None:
         if self._stopping:

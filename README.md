@@ -226,7 +226,15 @@ Omit `status` for all statuses. `query` is case-insensitive (maximum 120 charact
 
 Services accept administrators, users selected in **Users allowed to approve, deny, or cancel guest access**, and trusted HA automation/system contexts. User-initiated decisions persist `decision_user_id`; system decisions have no user ID. Events include `entry_id` for multi-site automation routing.
 
-Events: `omada_guest_access_request_created`, `omada_guest_access_request_approved`, `omada_guest_access_request_denied`, `omada_guest_access_request_expired`, `omada_guest_access_access_revoked`, and `omada_guest_access_omada_api_error`.
+Events: `omada_guest_access_portal_connected`, `omada_guest_access_request_created`, `omada_guest_access_request_approved`, `omada_guest_access_request_denied`, `omada_guest_access_request_expired`, `omada_guest_access_access_revoked`, and `omada_guest_access_omada_api_error`.
+
+`omada_guest_access_portal_connected` fires when a device first reaches the
+external portal with a valid Omada redirect context. It includes the client
+MAC, the IP Omada supplied (when present), the portal source IP, site, SSID or
+gateway/VLAN details, and the requested destination hostname. Omada's External
+Portal redirect does not provide the device's own hostname, and Omada has no
+documented pre-authorisation client-name lookup, so no device hostname is
+invented or reverse-resolved.
 
 See [examples/actionable-notifications.yaml](examples/actionable-notifications.yaml) for a mobile approval automation. Restrict its notifications to a trusted administrator's phone.
 

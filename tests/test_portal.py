@@ -5,6 +5,7 @@ from datetime import timedelta
 
 import pytest
 
+from custom_components.omada_guest_access.const import EVENT_PORTAL_CONNECTED
 from custom_components.omada_guest_access.portal import GuestPortal, _safe_redirect_url
 
 QUERY = {
@@ -45,6 +46,41 @@ async def test_request_status_approval_and_isolation(hass, coordinator, aiohttp_
     approved = await response.json()
     assert approved["status"] == "approved"
     assert approved["redirect_url"] == "https://example.com/"
+
+
+async def test_valid_portal_redirect_fires_connection_event_once_per_session(
+    hass, coordinator, aiohttp_client, socket_enabled
+):
+    events = []
+    hass.bus.async_listen(EVENT_PORTAL_CONNECTED, events.append)
+    client = await aiohttp_client(GuestPortal(hass, coordinator, 0).create_app())
+    query = {**QUERY, "clientIp": "192.168.9.133", "redirectUrl": "https://vpn.example.com/path"}
+
+    first = await client.get("/", params=query)
+    assert first.status == 200
+    await hass.async_block_till_done()
+    assert len(events) == 1
+    assert events[0].data == {
+        "entry_id": coordinator.entry.entry_id,
+        "client_mac": "AA:BB:CC:DD:EE:FF",
+        "omada_client_ip": "192.168.9.133",
+        "portal_client_ip": "127.0.0.1",
+        "site": "Default",
+        "connection_type": "wireless",
+        "access_point_mac": "11:22:33:44:55:66",
+        "gateway_mac": None,
+        "ssid_name": "Guest",
+        "radio_id": "1",
+        "vlan_id": None,
+        "redirect_hostname": "vpn.example.com",
+    }
+
+    # Re-opening the redirected URL with the session cookie is a refresh, not
+    # another device connection notification.
+    second = await client.get("/", params=query)
+    assert second.status == 200
+    await hass.async_block_till_done()
+    assert len(events) == 1
 
 
 @pytest.mark.parametrize(

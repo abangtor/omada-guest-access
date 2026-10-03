@@ -39,6 +39,7 @@ EVENT_REQUEST_DENIED: Final = f"{DOMAIN}_request_denied"
 EVENT_ACCESS_REVOKED: Final = f"{DOMAIN}_access_revoked"
 EVENT_REQUEST_EXPIRED: Final = f"{DOMAIN}_request_expired"
 EVENT_OMADA_API_ERROR: Final = f"{DOMAIN}_omada_api_error"
+EVENT_PORTAL_CONNECTED: Final = f"{DOMAIN}_portal_connected"
 
 REQUEST_STATUSES: Final = frozenset({"pending", "approved", "denied", "expired", "revoked"})
 STORAGE_VERSION: Final = 1

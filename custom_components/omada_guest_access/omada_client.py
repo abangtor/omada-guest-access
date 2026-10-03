@@ -52,6 +52,7 @@ class PortalContext:
     ssid_name: str | None = None
     radio_id: str | None = None
     vlan_id: str | None = None
+    client_ip: str | None = None
     redirect_url: str | None = None
 
     @property
