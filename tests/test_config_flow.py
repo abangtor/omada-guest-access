@@ -302,3 +302,24 @@ async def test_extended_options_are_serializable(entry, flow_http):
     assert "show_remember_checkbox" in fields
     assert "show_forget_button" in fields
     assert "forget_all_records" in fields
+
+
+async def test_options_store_guest_messages_including_blanks(hass, entry):
+    from custom_components.omada_guest_access.portal_messages import PORTAL_MESSAGES
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert set(PORTAL_MESSAGES) <= {key.schema for key in result["data_schema"].schema}
+    settings = {key: "" if index % 2 else "Please contact reception." for index, key in enumerate(PORTAL_MESSAGES)}
+    result = await hass.config_entries.options.async_configure(result["flow_id"], user_input=settings)
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert all(entry.options[key] == value for key, value in settings.items())
+
+
+@pytest.mark.parametrize("value", [None, 42, "x" * 501])
+def test_invalid_guest_messages_rejected(value):
+    from custom_components.omada_guest_access.config_flow import validate_portal_settings
+    from custom_components.omada_guest_access.portal_messages import PORTAL_MESSAGES
+
+    for key in PORTAL_MESSAGES:
+        with pytest.raises(ValueError):
+            validate_portal_settings({key: value})

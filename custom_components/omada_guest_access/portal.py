@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from collections import defaultdict, deque
 from dataclasses import replace
@@ -29,7 +30,10 @@ from .const import (
 )
 from .coordinator import OmadaGuestAccessCoordinator
 from .omada_client import PortalContext
+from .portal_messages import portal_messages
 from .portal_render import PortalTemplateError, _page
+
+_LOGGER = logging.getLogger(__name__)
 
 _SESSION_COOKIE = "omada_guest_portal"
 
@@ -71,8 +75,22 @@ class GuestPortal:
         try:
             response = await handler(request)
         except web.HTTPException as err:
-            err.headers.update(headers)
-            raise
+            # Keep diagnostics server-side, including context/proxy/validation
+            # failures. Never return exception text to the guest, even via API.
+            _LOGGER.debug("Guest portal HTTP %s: %s", err.status, err.text)
+            response = web.Response(
+                status=err.status,
+                text=portal_messages(self.coordinator.config)["portal_error_message"],
+                content_type="text/plain",
+                headers={key: value for key, value in err.headers.items() if key.lower() in {"retry-after", "allow"}},
+            )
+        except Exception:
+            _LOGGER.exception("Unexpected guest portal failure")
+            response = web.Response(
+                status=500,
+                text=portal_messages(self.coordinator.config)["portal_error_message"],
+                content_type="text/plain",
+            )
         response.headers.update(headers)
         return response
 
@@ -152,6 +170,7 @@ class GuestPortal:
                 _page, session_id, self.coordinator.config, session["request_id"]
             )
         except PortalTemplateError:
+            _LOGGER.exception("Unable to render guest portal template")
             raise web.HTTPServiceUnavailable(text="Portal template is invalid. Please contact your host.") from None
         response = web.Response(
             text=page,
@@ -332,7 +351,7 @@ def _safe_redirect_url(value: Any) -> str | None:
 def _public_request(item: dict[str, Any], context: PortalContext) -> dict[str, Any]:
     result = {
         key: value.isoformat() if hasattr(value := item.get(key), "isoformat") else value
-        for key in ("request_id", "status", "expires_at", "access_expires_at", "denial_reason")
+        for key in ("request_id", "status", "expires_at", "access_expires_at")
     }
     if item["status"] == "approved":
         result["redirect_url"] = context.redirect_url

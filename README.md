@@ -252,6 +252,14 @@ recorder:
       - sensor.active_sessions
 ```
 
+### Guest-facing error messages
+
+In **Settings → Devices & services → Omada Guest Access → Configure**, customize the portal HTTP error, session/connection error, submission error, denied, expired, and cancelled messages. Each accepts up to 500 characters of plain text; an empty value suppresses that message. Existing installations use generic defaults automatically. These settings also apply to custom layouts using `script_html`.
+
+All handled portal HTTP errors (including invalid redirects, proxy configuration, rate limits, invalid templates and unexpected failures) return only the configured **Portal HTTP error message**, never internal exception text. HTTP status codes and `Retry-After` are preserved. Browser fetch failures use the configured session or submission message and never display raw response bodies. Internal denial reasons remain available to administrators but are no longer included in guest API responses. Expected HTTP diagnostics are logged at debug level; unexpected/template failures are logged with a traceback server-side.
+
+This controls integration-generated message bodies, not reverse-proxy error pages, HTTP status codes, or server/proxy headers. Configure those separately if needed. Administrator-facing Home Assistant diagnostics are unchanged.
+
 Guest responses exclude other guests, internal controller context and credentials. Guest pages/status/errors use `Cache-Control: no-store`; the portal disables its own access log. Configure reverse-proxy logging accordingly: the initial query contains MAC addresses and connection details.
 
 ## Upgrade notes for 1.4.6

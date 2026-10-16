@@ -446,3 +446,59 @@ async def test_repeated_valid_reloads_do_not_consume_session_creation_limit(
     # Even when new-session budget is exhausted, existing sessions still load.
     response = await client.get('/', params=QUERY, headers={'Cookie': f'omada_guest_portal={token}'})
     assert response.status == 200
+
+
+@pytest.mark.parametrize("message", ["Please contact reception.", "", "<b>Help</b>"])
+async def test_http_errors_only_expose_configured_text(hass, coordinator, aiohttp_client, socket_enabled, message):
+    coordinator.config["portal_error_message"] = message
+    client = await aiohttp_client(GuestPortal(hass, coordinator, 0).create_app())
+    for path, status in [("/", 400), ("/api/request/unknown", 401), ("/missing", 404)]:
+        response = await client.get(path)
+        assert response.status == status
+        assert await response.text() == message
+        assert response.content_type == "text/plain"
+        assert response.headers["Cache-Control"] == "no-store"
+    headers = await landing(client)
+    response = await client.post("/api/request", headers=headers, json={"guest_name": "a" * 9000})
+    assert response.status == 413
+    assert await response.text() == message
+
+
+async def test_internal_exception_and_denial_never_reach_guest(
+    hass, coordinator, aiohttp_client, socket_enabled, monkeypatch, caplog
+):
+    from unittest.mock import AsyncMock
+
+    coordinator.config["portal_error_message"] = "Contact reception."
+    client = await aiohttp_client(GuestPortal(hass, coordinator, 0).create_app())
+    headers = await landing(client)
+    original = coordinator.async_create_request
+    for error, status in [(ValueError("private controller details"), 409), (RuntimeError("private backend"), 500)]:
+        monkeypatch.setattr(coordinator, "async_create_request", AsyncMock(side_effect=error))
+        response = await client.post("/api/request", headers=headers, json={"guest_name": "Alex"})
+        assert response.status == status
+        assert await response.text() == "Contact reception."
+    assert "private backend" in caplog.text
+    monkeypatch.setattr(coordinator, "async_create_request", original)
+    response = await client.post("/api/request", headers=headers, json={"guest_name": "Alex"})
+    request_id = (await response.json())["request_id"]
+    await coordinator.async_deny_request(request_id, "private controller denial")
+    for response in [
+        await client.get(f"/api/request/{request_id}", headers=headers),
+        await client.post("/api/request", headers=headers, json={"guest_name": "Alex"}),
+    ]:
+        assert "denial_reason" not in await response.json()
+        assert "private controller denial" not in await response.text()
+    assert coordinator.requests[request_id]["denial_reason"] == "private controller denial"
+
+
+async def test_rate_limit_keeps_retry_after_without_backend_text(hass, coordinator, aiohttp_client, socket_enabled):
+    coordinator.config["portal_error_message"] = "Please wait."
+    portal = GuestPortal(hass, coordinator, 0)
+    client = await aiohttp_client(portal.create_app())
+    for _ in range(10):
+        await landing(client)
+    response = await client.get("/", params=QUERY)
+    assert response.status == 429
+    assert int(response.headers["Retry-After"]) > 0
+    assert await response.text() == "Please wait."

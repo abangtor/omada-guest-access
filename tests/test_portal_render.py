@@ -95,3 +95,18 @@ def test_legacy_template_aliases_render_empty():
     page = _page("token", {"portal_template": DEFAULT_TEMPLATE + "{{ header_html }}{{ footer_html }}",
                            "portal_header": "old header", "portal_footer": "old footer"})
     assert "old header" not in page and "old footer" not in page
+
+
+def test_guest_messages_preserve_blanks_and_cannot_escape_script():
+    import json
+    import re
+
+    from custom_components.omada_guest_access.portal_messages import PORTAL_MESSAGES
+
+    values = {key: "" for key in PORTAL_MESSAGES}
+    values["portal_denied_message"] = '</script><script>alert("test")</script>\u2028 & < >'
+    page = _page("token", values)
+    encoded = re.search(r"const messages=(.*);", page).group(1)
+    assert json.loads(encoded) == values
+    assert "</script>" not in encoded
+    assert "x.denial_reason" not in page

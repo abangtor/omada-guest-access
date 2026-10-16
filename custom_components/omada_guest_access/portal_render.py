@@ -28,6 +28,7 @@ from .const import (
     DEFAULT_PORTAL_MESSAGE,
     DEFAULT_PORTAL_TITLE,
 )
+from .portal_messages import portal_messages
 
 
 class PortalTemplateError(ValueError):
@@ -113,6 +114,7 @@ def _builtin_page(session_id: str, config: dict[str, Any] | None = None, request
     if not re.fullmatch(r"#[0-9a-fA-F]{6}", accent):
         accent = DEFAULT_PORTAL_ACCENT
     return Template(_PAGE).substitute(
+        guest_messages=json.dumps(portal_messages(config)).replace("<", "\\u003c"),
         token=json.dumps(session_id),
         request_id=json.dumps(request_id),
         memory_key=json.dumps("omada_guest_access.guest." + hashlib.sha256(
@@ -145,6 +147,7 @@ button:disabled{opacity:.6;cursor:wait}input[type=checkbox]{width:auto;margin-ri
 ${remember_control}<button type='submit'>Request access</button>
 ${forget_control}</form><p id='status' role='status' aria-live='polite'></p><script id='portal-script' nonce='$nonce'>
 const token=$token,f=document.querySelector('#request'),s=document.querySelector('#status');let id=$request_id,timer;
+const messages=$guest_messages;
 const memoryKey=$memory_key,memoryTTL=30*24*60*60*1000,remember=f.querySelector('#remember-details'),forget=f.querySelector('#forget-details');
 function forgetDetails(){try{localStorage.removeItem(memoryKey)}catch(_){}if(forget)forget.hidden=true}
 function restoreDetails(){try{
@@ -167,10 +170,10 @@ function showContinue(target){try{
   let link=document.querySelector('#continue-internet');if(!link){link=document.createElement('a');link.id='continue-internet';s.after(link)}
   link.href=url.href;link.rel='noreferrer';link.textContent='Continue to the internet';
 }catch(_){}}
-async function poll(){try{let x=await api('/api/request/'+id);if(x.status==='pending'){s.textContent='Request sent. Waiting for approval…';return;}clearInterval(timer);if(x.status==='approved'){s.textContent='Access approved. You can now use the internet.';if(x.redirect_url)showContinue(x.redirect_url)}else if(x.status==='denied')s.textContent=x.denial_reason||'Access was denied.';else if(x.status==='revoked')s.textContent='Your internet access has been cancelled.';else s.textContent='This request has expired.'}catch(_){clearInterval(timer);s.textContent='Your portal session expired. Please reconnect to Guest Wi-Fi.'}}
+async function poll(){try{let x=await api('/api/request/'+id);if(x.status==='pending'){s.textContent='Request sent. Waiting for approval…';return;}clearInterval(timer);if(x.status==='approved'){s.textContent='Access approved. You can now use the internet.';if(x.redirect_url)showContinue(x.redirect_url)}else if(x.status==='denied')s.textContent=messages.portal_denied_message;else if(x.status==='revoked')s.textContent=messages.portal_revoked_message;else s.textContent=messages.portal_expired_message}catch(_){clearInterval(timer);s.textContent=messages.portal_session_error_message}}
 f.onsubmit=async e=>{e.preventDefault();const button=f.querySelector('button[type=submit]');button.disabled=true;
 try{const body=Object.fromEntries(new FormData(f));if(f.elements.terms_accepted)body.terms_accepted=f.elements.terms_accepted.checked;
 let x=await api('/api/request',{method:'POST',body:JSON.stringify(body)});id=x.request_id;saveDetails(body);f.hidden=true;s.textContent='Request sent. Waiting for approval…';timer=setInterval(poll,3000);await poll()}
-catch(_){s.textContent='Unable to send your request. Please reconnect and try again.'}finally{button.disabled=false}};
+catch(_){s.textContent=messages.portal_submit_error_message}finally{button.disabled=false}};
 if(id){f.hidden=true;s.textContent='Restoring your request…';timer=setInterval(poll,3000);poll();}
 </script></body></html>"""

@@ -15,6 +15,7 @@ from pathlib import Path
 
 from browser_card import check_card
 from browser_memory import check_guest_memory
+from browser_messages import check_guest_messages
 from playwright.async_api import async_playwright
 
 from custom_components.omada_guest_access.portal import _page
@@ -165,6 +166,7 @@ async def main(executable: str | None) -> None:
             await page.get_by_text("Your internet access has been cancelled.", exact=True).wait_for()
             assert submissions == [{"guest_name": "Alex", "note": "Visiting Sam\nArriving at 7pm", "terms_accepted": True}]
             await check_guest_memory(browser)
+            await check_guest_messages(browser)
             assert not errors, errors
             print(
                 "Browser smoke passed: admin actions, history pagination/filtering/errors, stale-response isolation, branding, consent, XSS escaping, multiline notes, request restoration after reload"

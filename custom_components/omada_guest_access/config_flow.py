@@ -63,6 +63,7 @@ from .omada_client import (
     normalize_controller_url,
 )
 from .portal import _safe_redirect_url, parse_networks
+from .portal_messages import PORTAL_MESSAGES
 from .portal_render import PortalTemplateError, validate_template
 from .settings import parse_duration_options
 
@@ -170,6 +171,7 @@ class OmadaGuestAccessOptionsFlow(config_entries.OptionsFlow):
                 return self.async_create_entry(title="", data=user_input)
         fields = _data_schema(values).schema
         keys = {
+            *PORTAL_MESSAGES,
             CONF_DURATION_OPTIONS,
             CONF_ENABLE_REVOKE,
             CONF_PORTAL_CSS,
@@ -235,6 +237,10 @@ def validate_portal_settings(values: dict[str, Any]) -> None:
         raise ValueError("Show forget button must be a boolean")
     if values.get(CONF_REQUIRE_TERMS) and not values.get(CONF_TERMS_TEXT, "").strip():
         raise ValueError("Terms text is required when acceptance is mandatory")
+    for key, default in PORTAL_MESSAGES.items():
+        value = values.get(key, default)
+        if not isinstance(value, str) or len(value) > 500:
+            raise ValueError("Guest messages must be text of at most 500 characters")
     validate_template(values)
     parse_networks(values.get(CONF_TRUSTED_PROXIES, ""))
     parse_networks(values.get(CONF_ALLOWED_NETWORKS, ""))
@@ -290,6 +296,10 @@ def _data_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
             vol.Optional(
                 CONF_DURATION_OPTIONS, default=defaults.get(CONF_DURATION_OPTIONS, DEFAULT_DURATION_OPTIONS)
             ): cv.string,
+            **{
+                vol.Optional(key, default=defaults.get(key, default)): TextSelector(TextSelectorConfig(multiline=True))
+                for key, default in PORTAL_MESSAGES.items()
+            },
             vol.Optional(CONF_ENABLE_REVOKE, default=defaults.get(CONF_ENABLE_REVOKE, True)): cv.boolean,
             **{
                 vol.Optional(key, default=defaults.get(key, "")): TextSelector(TextSelectorConfig(multiline=True))
