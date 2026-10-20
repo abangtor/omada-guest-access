@@ -184,7 +184,9 @@ class OmadaGuestAccessCard extends HTMLElement {
     if (parent) parent.append(element);
     return element;
   }
+  disconnectedCallback() { this._cancelNamePress?.(); }
   _render() {
+    this._cancelNamePress?.();
     if (!this._hass || !this._config) return;
     const root = this.shadowRoot;
     const focused = root.activeElement;
@@ -197,7 +199,7 @@ class OmadaGuestAccessCard extends HTMLElement {
     root.replaceChildren();
     this._node('style', `ha-card{padding:${this._config.compact ? '12px' : '20px'}}h2{margin:0 0 16px}h3{margin-bottom:8px}
       section{padding:${this._config.compact ? '6px' : '12px'} 0;border-top:1px solid var(--divider-color)}p{white-space:pre-wrap;overflow-wrap:anywhere}
-      .guest-row{display:grid;grid-template-columns:minmax(150px,1fr) auto;gap:8px;align-items:center}.guest-info p{margin:4px 0}.actions{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:6px}
+      .guest-row{display:grid;grid-template-columns:minmax(150px,1fr) auto;gap:8px;align-items:center}.guest-info p{margin:4px 0}.editable-name{cursor:pointer;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;touch-action:pan-y}.editable-name:focus-visible{outline:2px solid var(--primary-color);outline-offset:3px}.actions{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:6px}
       button{margin:0;padding:8px 12px;cursor:pointer;color:var(--primary-text-color);background:var(--card-background-color);border:1px solid var(--divider-color);border-radius:6px;white-space:nowrap}
       select,input{padding:8px;max-width:100%;box-sizing:border-box}label{display:block;margin:8px 0}details{margin:8px 0}.actions label{margin:0;display:flex;align-items:center;gap:4px;white-space:nowrap}
       @media(max-width:600px){.guest-row{grid-template-columns:1fr}.actions{justify-content:flex-start}}
@@ -228,12 +230,11 @@ class OmadaGuestAccessCard extends HTMLElement {
       for (const item of requests) {
         const row = this._node('section', undefined, card); row.className = 'guest-row';
         const info = this._node('div', undefined, row); info.className = 'guest-info';
-        this._guestName(info, item);
+        this._guestName(info, item, canDecide);
         if (this._config.show_notes && item.note) this._node('p', item.note, info);
         this._metadata(info, item.client_mac, item.expires_at, 'expires');
         if (this._config.show_actions) {
           const actions = this._node('div', undefined, row); actions.className = 'actions';
-          this._labelButton(actions, item, canDecide);
           if (this._config.show_duration_selector && presets.length) {
             const select = this._node('select', undefined, actions);
             select.id = `duration-${item.request_id}`;
@@ -265,11 +266,10 @@ class OmadaGuestAccessCard extends HTMLElement {
       for (const item of sessions) {
         const row = this._node('section', undefined, card); row.className = 'guest-row';
         const info = this._node('div', undefined, row); info.className = 'guest-info';
-        this._guestName(info, item);
+        this._guestName(info, item, canDecide);
         this._metadata(info, item.client_mac, item.access_expires_at, 'until');
         if (this._config.show_actions) {
           const actions = this._node('div', undefined, row); actions.className = 'actions';
-          this._labelButton(actions, item, canDecide);
           if (active.attributes.revoke_supported) {
             this._button(actions, 'Cancel access', 'revoke_access', item, {}, !canDecide);
           }
@@ -387,35 +387,78 @@ class OmadaGuestAccessCard extends HTMLElement {
     if (parts.length) this._node('p', parts.join(' · '), parent);
   }
   _date(value) { return value ? new Date(value).toLocaleString() : '—'; }
-  _guestName(parent, item) {
-    this._node('strong', item.admin_label || item.guest_name || 'Guest', parent);
+  _guestName(parent, item, canDecide) {
+    const name = this._node('strong', item.admin_label || item.guest_name || 'Guest', parent);
+    if (this._config.show_actions && canDecide && !this._busy.has(item.request_id)) {
+      name.className = 'editable-name';
+      name.id = `guest-name-${item.request_id}`;
+      name.tabIndex = 0;
+      name.setAttribute('role', 'button');
+      name.setAttribute('aria-label', `Edit label for ${name.textContent}`);
+      name.title = 'Double-click or long-press to edit label. Keyboard: Enter or Space.';
+      const edit = () => this._editLabel(item);
+      name.addEventListener('dblclick', event => {
+        event.preventDefault();
+        // Touch browsers can synthesize a double-click after a hold and tap.
+        if (event.sourceCapabilities?.firesTouchEvents ||
+            performance.now() - (this._lastNameTouch ?? -Infinity) < 1000) return;
+        edit();
+      });
+      name.addEventListener('keydown', event => {
+        if ((event.key === 'Enter' || event.key === ' ') && !event.repeat) {
+          event.preventDefault(); edit();
+        }
+      });
+      let press;
+      const cancel = () => {
+        if (press) clearTimeout(press.timer);
+        press = null;
+        if (this._cancelNamePress === cancel) this._cancelNamePress = null;
+      };
+      name.addEventListener('pointerdown', event => {
+        this._cancelNamePress?.();
+        if (!event.isPrimary || !['touch', 'pen'].includes(event.pointerType)) return;
+        this._lastNameTouch = performance.now();
+        press = {id: event.pointerId, x: event.clientX, y: event.clientY,
+          timer: setTimeout(() => { cancel(); if (name.isConnected) edit(); }, 600)};
+        this._cancelNamePress = cancel;
+      });
+      name.addEventListener('pointermove', event => {
+        if (press && event.pointerId === press.id &&
+            Math.hypot(event.clientX - press.x, event.clientY - press.y) > 10) cancel();
+      });
+      for (const type of ['pointerup', 'pointercancel', 'pointerleave', 'lostpointercapture']) {
+        name.addEventListener(type, cancel);
+      }
+      name.addEventListener('contextmenu', event => { event.preventDefault(); });
+    }
     if (item.admin_label && item.guest_name && item.admin_label !== item.guest_name) {
       this._node('small', `Submitted as: ${item.guest_name}`, parent);
     }
   }
-  _labelButton(parent, item, canDecide) {
-    const button = this._node('button', item.admin_label ? 'Rename' : 'Label', parent);
-    button.disabled = !canDecide || this._busy.has(item.request_id);
-    button.addEventListener('click', async () => {
-      const label = window.prompt(
-        'Admin label (leave empty to restore the submitted name):',
-        item.admin_label || item.guest_name || ''
-      );
-      if (label === null) return;
-      if (label.trim().length > 120) {
-        this._error = 'Guest label must be at most 120 characters.'; this._render(); return;
-      }
-      this._busy.add(item.request_id); this._error = ''; this._render();
-      try {
-        await this._hass.callService('omada_guest_access', 'set_guest_label', {
-          request_id: item.request_id, label: label.trim(),
-        });
-      } catch (err) {
-        this._error = err.message || 'Unable to set the guest label.';
-      } finally {
-        this._busy.delete(item.request_id); this._render();
-      }
-    });
+  async _editLabel(item) {
+    const pending = this._hass.states[this._config.pending_entity];
+    const canDecide = this._hass.user?.is_admin === true ||
+      (pending?.attributes.decision_user_ids || []).includes(this._hass.user?.id);
+    if (!this._config.show_actions || !canDecide || this._busy.has(item.request_id)) return;
+    const label = window.prompt(
+      'Admin label (leave empty to restore the submitted name):',
+      item.admin_label || item.guest_name || ''
+    );
+    if (label === null) return;
+    if (label.trim().length > 120) {
+      this._error = 'Guest label must be at most 120 characters.'; this._render(); return;
+    }
+    this._busy.add(item.request_id); this._error = ''; this._render();
+    try {
+      await this._hass.callService('omada_guest_access', 'set_guest_label', {
+        request_id: item.request_id, label: label.trim(),
+      });
+    } catch (err) {
+      this._error = err.message || 'Unable to set the guest label.';
+    } finally {
+      this._busy.delete(item.request_id); this._render();
+    }
   }
   _button(row, label, service, item, data, disabled) {
     const button = this._node('button', label, row);

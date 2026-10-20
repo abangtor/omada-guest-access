@@ -21,6 +21,7 @@ async def check_card(page):
       };
       card.setConfig(baseConfig);card.hass=mockHass;
     }""")
+    await check_name_labels(page)
     await page.get_by_role("button", name="Show history", exact=True).click()
     details = page.locator("omada-guest-access-card details")
     await page.get_by_text("Request details", exact=True).click()
@@ -224,3 +225,85 @@ async def check_card(page):
     print(
         "Card regressions passed: visual-editor contract, visibility, limits, stable details/focus, identity isolation"
     )
+
+
+async def check_name_labels(page):
+    """Name gestures replace label buttons without turning taps/scrolls into edits."""
+    await page.evaluate("""() => {
+      mockHass.callService = async (...args) => calls.push(args);
+      window.savedPrompt = window.prompt;
+      window.labelPrompts = [];
+      window.labelReply = '  Family phone  ';
+      window.prompt = (...args) => { labelPrompts.push(args); return labelReply; };
+    }""")
+    names = page.locator('omada-guest-access-card .editable-name')
+    assert await names.count() == 2
+    for old in ['Label', 'Rename']:
+        assert await page.get_by_role('button', name=old, exact=True).count() == 0
+    await names.first.click()
+    assert await page.evaluate('labelPrompts.length') == 0
+    await names.first.dblclick()
+    assert await page.evaluate('calls.at(-1)') == [
+        'omada_guest_access', 'set_guest_label', {'request_id': 'one', 'label': 'Family phone'}
+    ]
+    await page.evaluate("labelReply = ''")
+    await names.last.focus()
+    await page.keyboard.press('Enter')
+    assert await page.evaluate('calls.at(-1)[2]') == {'request_id': 'two', 'label': ''}
+    await page.evaluate('labelReply = null; window.beforeLabelCalls = calls.length')
+    await names.first.dblclick()
+    assert await page.evaluate('calls.length === beforeLabelCalls')
+    await page.evaluate("labelReply = 'x'.repeat(121)")
+    await names.first.dblclick()
+    assert await page.get_by_text('Guest label must be at most 120 characters.', exact=True).count() == 1
+    assert await page.evaluate('calls.length === beforeLabelCalls')
+    await page.evaluate("labelReply = 'Touch label'; card._error = ''; card._render()")
+
+    # Real Chromium touch events exercise mobile pointer dispatch and the hold timer.
+    cdp = await page.context.new_cdp_session(page)
+    box = await names.last.bounding_box()
+    point = {'x': box['x'] + box['width'] / 2, 'y': box['y'] + box['height'] / 2}
+    await cdp.send('Input.dispatchTouchEvent', {'type': 'touchStart', 'touchPoints': [point]})
+    await page.wait_for_timeout(700)
+    await cdp.send('Input.dispatchTouchEvent', {'type': 'touchEnd', 'touchPoints': []})
+    assert await page.evaluate('calls.at(-1)[2]') == {'request_id': 'two', 'label': 'Touch label'}
+    await page.evaluate('window.beforePrompts = labelPrompts.length')
+    # Short tap and a scrolling gesture must not open the editor.
+    await cdp.send('Input.dispatchTouchEvent', {'type': 'touchStart', 'touchPoints': [point]})
+    await cdp.send('Input.dispatchTouchEvent', {'type': 'touchEnd', 'touchPoints': []})
+    await page.wait_for_timeout(700)
+    assert await page.evaluate('labelPrompts.length === beforePrompts')
+    await cdp.send('Input.dispatchTouchEvent', {'type': 'touchStart', 'touchPoints': [point]})
+    await cdp.send('Input.dispatchTouchEvent', {
+        'type': 'touchMove', 'touchPoints': [{'x': point['x'], 'y': point['y'] + 30}]
+    })
+    await page.wait_for_timeout(700)
+    await cdp.send('Input.dispatchTouchEvent', {'type': 'touchEnd', 'touchPoints': []})
+    assert await page.evaluate('labelPrompts.length === beforePrompts')
+    # Redraws and removal cancel outstanding holds rather than editing a stale row.
+    for action in ['card._render()', 'card.remove()']:
+        await names.first.dispatch_event('pointerdown', {
+            'pointerType': 'touch', 'isPrimary': True, 'pointerId': 7, 'clientX': 10, 'clientY': 10
+        })
+        await page.evaluate(action)
+        await page.wait_for_timeout(700)
+        assert await page.evaluate('labelPrompts.length === beforePrompts')
+        if action == 'card.remove()':
+            await page.evaluate('document.body.append(card)')
+    await cdp.detach()
+    await page.evaluate('card.setConfig({...baseConfig, show_actions:false})')
+    assert await names.count() == 0
+    await page.evaluate('mockHass.user.is_admin=false; card.setConfig(baseConfig)')
+    assert await names.count() == 0
+    await page.evaluate("""() => {
+      mockHass.states['sensor.pending'].attributes.decision_user_ids = [mockHass.user.id];
+      card.hass = mockHass;
+    }""")
+    assert await names.count() == 2
+    await page.evaluate("""() => {
+      mockHass.states['sensor.pending'].attributes.decision_user_ids = [];
+      mockHass.user.is_admin = true;
+      window.prompt = savedPrompt;
+      card.setConfig(baseConfig);
+    }""")
+    print('Name label gestures passed: double-click, keyboard, touch hold, cancellation, permissions')
