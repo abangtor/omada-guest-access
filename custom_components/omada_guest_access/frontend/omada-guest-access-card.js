@@ -194,6 +194,11 @@ class OmadaGuestAccessCard extends HTMLElement {
     const root = this.shadowRoot;
     const focused = root.activeElement;
     const focusState = focused?.id ? {id: focused.id, start: focused.selectionStart, end: focused.selectionEnd} : null;
+    const selection = root.getSelection?.() || window.getSelection();
+    if (focusState && focused.isContentEditable && selection?.rangeCount &&
+        focused.contains(selection.anchorNode) && focused.contains(selection.focusNode)) {
+      focusState.anchor = selection.anchorOffset; focusState.focus = selection.focusOffset;
+    }
     root.querySelectorAll('details[data-request-id]').forEach(el => {
       this._expandedHistory.set(el.dataset.requestId, el.open);
     });
@@ -206,7 +211,7 @@ class OmadaGuestAccessCard extends HTMLElement {
       button{margin:0;padding:8px 12px;cursor:pointer;color:var(--primary-text-color);background:var(--card-background-color);border:1px solid var(--divider-color);border-radius:6px;white-space:nowrap}
       select,input{padding:8px;max-width:100%;box-sizing:border-box}label{display:block;margin:8px 0}details{margin:8px 0}.actions label{margin:0;display:flex;align-items:center;gap:4px;white-space:nowrap}
       @media(max-width:600px){.guest-row{grid-template-columns:1fr}.actions{justify-content:flex-start}}
-      .label-editor{display:flex;flex-wrap:wrap;gap:6px;align-items:center}.label-editor input{min-width:0;width:100%;font:inherit;color:var(--primary-text-color);background:var(--card-background-color);border:1px solid var(--primary-color);border-radius:6px}.label-editor small{width:100%}
+      .name-editor{display:inline-block;min-width:1ch;max-width:100%;white-space:pre-wrap;overflow-wrap:anywhere;cursor:text;outline:none;border-bottom:1px solid var(--primary-color);user-select:text;-webkit-user-select:text;-webkit-touch-callout:default;touch-action:auto}.name-editor[aria-busy="true"]{opacity:.5}.label-error{display:block}
       button:disabled{opacity:.5;cursor:default}.error{color:var(--error-color)}small{color:var(--secondary-text-color)}`, root);
     const card = this._node('ha-card', undefined, root);
     if (this._config.show_title) this._node('h2', this._config.title ?? 'Guest Wi-Fi requests', card);
@@ -289,6 +294,10 @@ class OmadaGuestAccessCard extends HTMLElement {
       replacement?.focus({preventScroll: true});
       if (replacement?.tagName === 'INPUT' && focusState.start !== null) {
         replacement.setSelectionRange(focusState.start, focusState.end);
+      } else if (replacement?.isContentEditable && replacement.firstChild && focusState.anchor !== undefined) {
+        const selection = root.getSelection?.() || window.getSelection();
+        selection?.setBaseAndExtent(replacement.firstChild, Math.min(focusState.anchor, replacement.textContent.length),
+          replacement.firstChild, Math.min(focusState.focus, replacement.textContent.length));
       }
     }
   }
@@ -455,43 +464,49 @@ class OmadaGuestAccessCard extends HTMLElement {
     this._labelEdit = {id: item.request_id, value: item.admin_label || item.guest_name || ''};
     this._render();
     const input = this.shadowRoot.getElementById('guest-label-input');
-    input?.focus(); input?.select();
+    input?.focus();
+    if (input) {
+      const range = document.createRange(); range.selectNodeContents(input);
+      const selection = this.shadowRoot.getSelection?.() || window.getSelection();
+      selection?.removeAllRanges(); selection?.addRange(range);
+    }
   }
   _inlineLabel(parent, item) {
     const edit = this._labelEdit;
-    const form = this._node('form', undefined, parent);
-    form.className = 'label-editor';
-    const input = this._node('input', undefined, form);
-    input.id = 'guest-label-input';
-    input.type = 'text'; input.value = edit.value;
-    input.setAttribute('aria-label', 'Guest label');
-    input.setAttribute('aria-describedby', 'guest-label-hint');
-    input.autocomplete = 'off';
-    input.disabled = !!edit.saving;
-    input.addEventListener('input', () => { edit.value = input.value; });
-    const cancel = () => {
-      if (edit.saving) return;
-      this._labelEdit = null; this._render();
-      this.shadowRoot.getElementById(`guest-name-${item.request_id}`)?.focus();
-    };
+    // Edit the name itself: no input box, modal, or extra action buttons.
+    const input = this._node('strong', edit.value, parent);
+    input.className = 'name-editor'; input.id = 'guest-label-input';
+    input.contentEditable = edit.saving ? 'false' : 'plaintext-only';
+    input.tabIndex = 0;
+    input.setAttribute('role', 'textbox'); input.setAttribute('aria-label', 'Guest label');
+    input.setAttribute('aria-multiline', 'false');
+    input.setAttribute('aria-busy', String(!!edit.saving));
+    input.title = 'Enter or tap away to save. Escape to cancel. Clear to restore the submitted name.';
+    input.addEventListener('input', () => { edit.value = input.textContent; });
+    const save = () => this._saveLabel(item, edit);
     input.addEventListener('keydown', event => {
-      if (event.isComposing) return;
-      if (event.key === 'Escape') { event.preventDefault(); cancel(); }
+      event.stopPropagation();
+      if (event.isComposing || edit.saving) return;
+      if (event.key === 'Enter') { event.preventDefault(); save(); }
+      if (event.key === 'Escape') {
+        event.preventDefault(); this._labelEdit = null; this._render();
+        this.shadowRoot.getElementById(`guest-name-${item.request_id}`)?.focus();
+      }
     });
-    const save = this._node('button', edit.saving ? 'Saving…' : 'Save', form);
-    save.type = 'submit'; save.disabled = !!edit.saving;
-    const cancelButton = this._node('button', 'Cancel', form);
-    cancelButton.type = 'button'; cancelButton.disabled = !!edit.saving;
-    cancelButton.addEventListener('click', cancel);
-    const hint = this._node('small', 'Leave empty to restore the submitted name.', form);
-    hint.id = 'guest-label-hint';
+    input.addEventListener('beforeinput', event => {
+      if (!event.isComposing && ['insertParagraph', 'insertLineBreak'].includes(event.inputType)) {
+        event.preventDefault(); save();
+      }
+    });
+    // Ignore blur from redraw/removal; only leaving a live editor commits.
+    input.addEventListener('blur', () => queueMicrotask(() => {
+      if (input.isConnected && this.shadowRoot.activeElement !== input && !edit.saving) save();
+    }));
     if (edit.error) {
-      const error = this._node('small', edit.error, form);
-      error.className = 'error'; error.setAttribute('role', 'alert');
+      const error = this._node('small', edit.error, parent);
+      error.id = 'guest-label-error'; error.className = 'error label-error';
+      error.setAttribute('role', 'alert'); input.setAttribute('aria-describedby', error.id);
     }
-    form.addEventListener('submit', event => {
-      event.preventDefault(); this._saveLabel(item, edit);
-    });
   }
   async _saveLabel(item, edit) {
     if (this._labelEdit !== edit || edit.saving || !this._canEditLabel(item)) return;

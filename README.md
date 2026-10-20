@@ -157,7 +157,7 @@ title: Guest Wi-Fi
 
 Entity IDs may have suffixes if multiple sites/integrations are installed. Find them under the integration's entities. Administrators and users selected in integration options see enabled approval controls. Errors are displayed in the card; grants show their scheduled expiry and a Cancel access button when deauthentication is enabled.
 
-To set or change a local guest label, **double-click the name on desktop** or **long-press it on mobile** (about 0.6 seconds) in pending requests or unexpired grants. Keyboard users can focus the name and press Enter or Space. The name becomes an inline text field: press Enter or Save to apply, or Escape or Cancel to discard. Clear the label and save to restore the submitted name. Label editing requires decision permissions and `show_actions: true`; the submitted name is preserved.
+To set or change a local guest label, **double-click the name on desktop** or **long-press it on mobile** (about 0.6 seconds) in pending requests or unexpired grants. Keyboard users can focus the name and press Enter or Space. The name text itself becomes editable in place, without a text box or dialog: press Enter or tap/click away to save, or Escape to discard. Clear the label and save to restore the submitted name. Label editing requires decision permissions and `show_actions: true`; the submitted name is preserved.
 
 ### Visual editor and visibility
 

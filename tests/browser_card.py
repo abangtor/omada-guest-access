@@ -242,13 +242,19 @@ async def check_name_labels(page):
     await names.first.click()
     assert await field.count() == 0
     await names.first.dblclick()
+    assert await field.evaluate("el => el.tagName === 'STRONG' && el.isContentEditable")
+    assert await page.locator('omada-guest-access-card .label-editor').count() == 0
+    assert await page.get_by_role('button', name='Save', exact=True).count() == 0
     await field.fill('  Family phone  ')
+    await field.press('ArrowLeft')
     await page.evaluate("""() => {
       mockHass.states['sensor.pending'] = {...mockHass.states['sensor.pending']};
       card.hass = mockHass;
     }""")
-    assert await field.input_value() == '  Family phone  '
+    assert await field.text_content() == '  Family phone  '
     assert await field.evaluate("el => el.getRootNode().activeElement === el")
+    assert await field.evaluate("el => el.getRootNode().getSelection().anchorOffset === 15")
+    assert await page.evaluate('calls.filter(c => c[1] === \"set_guest_label\").length === 0')
     await field.press('Enter')
     assert await page.evaluate('calls.at(-1)') == [
         'omada_guest_access', 'set_guest_label', {'request_id': 'one', 'label': 'Family phone'}
@@ -256,7 +262,7 @@ async def check_name_labels(page):
     await names.last.focus()
     await page.keyboard.press('Enter')
     await field.fill('')
-    await page.get_by_role('button', name='Save', exact=True).click()
+    await page.get_by_role('heading', name='Unexpired grants (1)', exact=True).click()
     assert await page.evaluate('calls.at(-1)[2]') == {'request_id': 'two', 'label': ''}
     await page.evaluate('window.beforeLabelCalls = calls.length')
     await names.first.dblclick()
@@ -273,9 +279,9 @@ async def check_name_labels(page):
     await page.evaluate("() => { mockHass.callService = async () => { throw new Error('Save failed'); }; }")
     await field.press('Enter')
     assert await page.get_by_role('alert').inner_text() == 'Save failed'
-    assert await field.input_value() == 'Retry label'
+    assert await field.text_content() == 'Retry label'
     await page.evaluate("() => { mockHass.callService = async (...args) => calls.push(args); }")
-    await page.get_by_role('button', name='Save', exact=True).click()
+    await field.press('Enter')
     assert await field.count() == 0
 
     # Real Chromium touch events exercise mobile pointer dispatch and the hold timer.
@@ -287,7 +293,7 @@ async def check_name_labels(page):
     await cdp.send('Input.dispatchTouchEvent', {'type': 'touchEnd', 'touchPoints': []})
     assert await field.count() == 1
     await field.fill('Touch label')
-    await page.get_by_role('button', name='Save', exact=True).click()
+    await field.press('Enter')
     assert await page.evaluate('calls.at(-1)[2]') == {'request_id': 'two', 'label': 'Touch label'}
     box = await names.last.bounding_box()
     point = {'x': box['x'] + box['width'] / 2, 'y': box['y'] + box['height'] / 2}
