@@ -104,6 +104,7 @@ class OmadaGuestAccessCard extends HTMLElement {
         throw new Error(`${key} must be true or false.`);
       }
     }
+    this._labelEdit = null;
     this._clearHistoryDetails();
     this._selectedDurations.clear();
     this._historyGeneration++;
@@ -131,6 +132,7 @@ class OmadaGuestAccessCard extends HTMLElement {
     const permissionMarker = (pending?.attributes?.decision_user_ids || []).join('|');
     if (identity !== this._identity) {
       this._identity = identity;
+      this._labelEdit = null;
       this._historyGeneration++;
       this._clearHistoryDetails();
       this._selectedDurations.clear();
@@ -141,6 +143,7 @@ class OmadaGuestAccessCard extends HTMLElement {
       this._historyOffset = 0;
       this._historyQuery = ''; this._historyStatus = '';
     }
+    if (permissionMarker !== this._permissionMarker) this._labelEdit = null;
     this._hass = hass;
     // HA creates a new hass object for every state event. Never stringify the
     // complete request/session attributes here: unrelated events must not
@@ -184,7 +187,7 @@ class OmadaGuestAccessCard extends HTMLElement {
     if (parent) parent.append(element);
     return element;
   }
-  disconnectedCallback() { this._cancelNamePress?.(); }
+  disconnectedCallback() { this._cancelNamePress?.(); this._labelEdit = null; }
   _render() {
     this._cancelNamePress?.();
     if (!this._hass || !this._config) return;
@@ -203,6 +206,7 @@ class OmadaGuestAccessCard extends HTMLElement {
       button{margin:0;padding:8px 12px;cursor:pointer;color:var(--primary-text-color);background:var(--card-background-color);border:1px solid var(--divider-color);border-radius:6px;white-space:nowrap}
       select,input{padding:8px;max-width:100%;box-sizing:border-box}label{display:block;margin:8px 0}details{margin:8px 0}.actions label{margin:0;display:flex;align-items:center;gap:4px;white-space:nowrap}
       @media(max-width:600px){.guest-row{grid-template-columns:1fr}.actions{justify-content:flex-start}}
+      .label-editor{display:flex;flex-wrap:wrap;gap:6px;align-items:center}.label-editor input{min-width:0;width:100%;font:inherit;color:var(--primary-text-color);background:var(--card-background-color);border:1px solid var(--primary-color);border-radius:6px}.label-editor small{width:100%}
       button:disabled{opacity:.5;cursor:default}.error{color:var(--error-color)}small{color:var(--secondary-text-color)}`, root);
     const card = this._node('ha-card', undefined, root);
     if (this._config.show_title) this._node('h2', this._config.title ?? 'Guest Wi-Fi requests', card);
@@ -388,6 +392,10 @@ class OmadaGuestAccessCard extends HTMLElement {
   }
   _date(value) { return value ? new Date(value).toLocaleString() : '—'; }
   _guestName(parent, item, canDecide) {
+    if (this._labelEdit?.id === item.request_id && this._config.show_actions && canDecide) {
+      this._inlineLabel(parent, item);
+      return;
+    }
     const name = this._node('strong', item.admin_label || item.guest_name || 'Guest', parent);
     if (this._config.show_actions && canDecide && !this._busy.has(item.request_id)) {
       name.className = 'editable-name';
@@ -436,28 +444,74 @@ class OmadaGuestAccessCard extends HTMLElement {
       this._node('small', `Submitted as: ${item.guest_name}`, parent);
     }
   }
-  async _editLabel(item) {
+  _canEditLabel(item) {
     const pending = this._hass.states[this._config.pending_entity];
-    const canDecide = this._hass.user?.is_admin === true ||
-      (pending?.attributes.decision_user_ids || []).includes(this._hass.user?.id);
-    if (!this._config.show_actions || !canDecide || this._busy.has(item.request_id)) return;
-    const label = window.prompt(
-      'Admin label (leave empty to restore the submitted name):',
-      item.admin_label || item.guest_name || ''
-    );
-    if (label === null) return;
-    if (label.trim().length > 120) {
-      this._error = 'Guest label must be at most 120 characters.'; this._render(); return;
+    return this._config.show_actions && !this._busy.has(item.request_id) &&
+      (this._hass.user?.is_admin === true ||
+        (pending?.attributes.decision_user_ids || []).includes(this._hass.user?.id));
+  }
+  _editLabel(item) {
+    if (!this._canEditLabel(item) || this._labelEdit?.saving) return;
+    this._labelEdit = {id: item.request_id, value: item.admin_label || item.guest_name || ''};
+    this._render();
+    const input = this.shadowRoot.getElementById('guest-label-input');
+    input?.focus(); input?.select();
+  }
+  _inlineLabel(parent, item) {
+    const edit = this._labelEdit;
+    const form = this._node('form', undefined, parent);
+    form.className = 'label-editor';
+    const input = this._node('input', undefined, form);
+    input.id = 'guest-label-input';
+    input.type = 'text'; input.value = edit.value;
+    input.setAttribute('aria-label', 'Guest label');
+    input.setAttribute('aria-describedby', 'guest-label-hint');
+    input.autocomplete = 'off';
+    input.disabled = !!edit.saving;
+    input.addEventListener('input', () => { edit.value = input.value; });
+    const cancel = () => {
+      if (edit.saving) return;
+      this._labelEdit = null; this._render();
+      this.shadowRoot.getElementById(`guest-name-${item.request_id}`)?.focus();
+    };
+    input.addEventListener('keydown', event => {
+      if (event.isComposing) return;
+      if (event.key === 'Escape') { event.preventDefault(); cancel(); }
+    });
+    const save = this._node('button', edit.saving ? 'Saving…' : 'Save', form);
+    save.type = 'submit'; save.disabled = !!edit.saving;
+    const cancelButton = this._node('button', 'Cancel', form);
+    cancelButton.type = 'button'; cancelButton.disabled = !!edit.saving;
+    cancelButton.addEventListener('click', cancel);
+    const hint = this._node('small', 'Leave empty to restore the submitted name.', form);
+    hint.id = 'guest-label-hint';
+    if (edit.error) {
+      const error = this._node('small', edit.error, form);
+      error.className = 'error'; error.setAttribute('role', 'alert');
     }
-    this._busy.add(item.request_id); this._error = ''; this._render();
+    form.addEventListener('submit', event => {
+      event.preventDefault(); this._saveLabel(item, edit);
+    });
+  }
+  async _saveLabel(item, edit) {
+    if (this._labelEdit !== edit || edit.saving || !this._canEditLabel(item)) return;
+    const label = edit.value.trim();
+    if (label.length > 120) {
+      edit.error = 'Guest label must be at most 120 characters.'; this._render(); return;
+    }
+    edit.saving = true; edit.error = '';
+    this._busy.add(item.request_id); this._render();
     try {
       await this._hass.callService('omada_guest_access', 'set_guest_label', {
-        request_id: item.request_id, label: label.trim(),
+        request_id: item.request_id, label,
       });
+      if (this._labelEdit === edit) this._labelEdit = null;
     } catch (err) {
-      this._error = err.message || 'Unable to set the guest label.';
+      edit.error = err.message || 'Unable to set the guest label.';
     } finally {
+      edit.saving = false;
       this._busy.delete(item.request_id); this._render();
+      if (!this._labelEdit) this.shadowRoot.getElementById(`guest-name-${item.request_id}`)?.focus();
     }
   }
   _button(row, label, service, item, data, disabled) {
