@@ -159,7 +159,7 @@ Entity IDs may have suffixes if multiple sites/integrations are installed. Find 
 
 To set or change a local guest label, **double-click the name on desktop** or **long-press it on mobile** (about 0.6 seconds) in pending requests or unexpired grants. Keyboard users can focus the name and press Enter or Space. The name text itself becomes editable in place, without a text box or dialog: press Enter or tap/click away to save, or Escape to discard. Clear the label and save to restore the submitted name. Label editing requires decision permissions and `show_actions: true`; the submitted name is preserved.
 
-To hide the “Submitted as: …” line below renamed guests, turn off **Show submitted guest names below labels** in the card editor or set `show_submitted_as: false` in YAML. This does not change the saved submitted name.
+To hide the “Submitted as: …” line below renamed guests, turn off **Show "Submitted as …" info** in the card editor or set `show_submitted_as: false` in YAML. This does not change the saved submitted name.
 
 ### Visual editor and visibility
 
@@ -362,3 +362,12 @@ existing controller grants are not retroactively corrected. End incorrect grants
 in Hotspot Manager and submit a fresh request. Verify with a one-hour approval
 that Omada records expiry one hour after authorization before using longer grants.
 Forever is a finite 3650-day request, not a verified unlimited-access sentinel.
+
+## Upgrade notes for 1.4.10
+
+The visual card editor now has a dedicated **Show "Submitted as …" info** switch.
+Turn it off to hide the submitted name below renamed guests; the saved name is unchanged.
+The default remains on, and `show_submitted_as: false` still works in YAML.
+Update/redownload the integration, restart Home Assistant, and reload the dashboard
+to load the new editor. Storage-managed card resources automatically change to
+`?v=1.4.10`; YAML-managed resources need that version updated manually.
