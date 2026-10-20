@@ -22,7 +22,7 @@ const cardSchema = [
   ...['pending_entity', 'active_entity'].map(name => ({name, required: true, selector: {entity: {domain: 'sensor'}}})),
   {name: 'duration_hours', selector: {number: {min: 0, max: 720, step: 1, mode: 'box'}}},
   {name: 'history_page_size', selector: {number: {min: 1, max: 50, step: 1, mode: 'box'}}},
-  ...Object.keys(CARD_DEFAULTS).filter(name => typeof CARD_DEFAULTS[name] === 'boolean' && name !== 'show_submitted_as')
+  ...Object.keys(CARD_DEFAULTS).filter(name => typeof CARD_DEFAULTS[name] === 'boolean')
     .map(name => ({name, selector: {boolean: {}}})),
 ];
 class OmadaGuestAccessCardEditor extends HTMLElement {
@@ -30,47 +30,19 @@ class OmadaGuestAccessCardEditor extends HTMLElement {
     super(); this.attachShadow({mode: 'open'});
     const note = document.createElement('p');
     note.textContent = 'Visibility options change presentation only, not Home Assistant permissions. Both sensors are required, even when a section is hidden.';
-    // A native switch works even before HA's lazy selector components load.
-    const style = document.createElement('style');
-    style.textContent = `
-      .submitted-option{display:flex;align-items:center;justify-content:space-between;gap:16px;
-        padding:16px 0;cursor:pointer;color:var(--primary-text-color)}
-      .submitted-switch{appearance:none;-webkit-appearance:none;position:relative;flex:none;
-        width:40px;height:24px;margin:0;border:0;border-radius:12px;cursor:pointer;
-        background:var(--disabled-text-color,#777)}
-      .submitted-switch::before{content:'';position:absolute;width:18px;height:18px;top:3px;left:3px;
-        border-radius:50%;background:var(--card-background-color,#fff)}
-      .submitted-switch:checked{background:var(--primary-color,#03a9f4)}
-      .submitted-switch:checked::before{transform:translateX(16px)}
-      .submitted-switch:focus-visible{outline:2px solid var(--primary-color,#03a9f4);outline-offset:3px}
-      `;
-    const option = document.createElement('label');
-    option.className = 'submitted-option';
-    const caption = document.createElement('span');
-    caption.textContent = CARD_LABELS.show_submitted_as;
-    this._submittedSwitch = document.createElement('input');
-    this._submittedSwitch.type = 'checkbox';
-    this._submittedSwitch.className = 'submitted-switch';
-    this._submittedSwitch.setAttribute('role', 'switch');
-    this._submittedSwitch.addEventListener('change', () => {
-      this._config = {...this._config, show_submitted_as: this._submittedSwitch.checked};
-      this._form.data = {...CARD_DEFAULTS, ...this._config};
-      this._fireConfigChanged();
-    });
-    option.append(caption, this._submittedSwitch);
     this._form = document.createElement('ha-form');
     this._form.schema = cardSchema;
     this._form.computeLabel = schema => CARD_LABELS[schema.name] || schema.name;
     this._form.addEventListener('value-changed', event => {
       event.stopPropagation();
       const value = event.detail.value;
-      this._config = {...this._config, ...value, show_submitted_as: this._submittedSwitch.checked};
+      this._config = {...this._config, ...value};
       // ha-form emits the complete form data; clearing an optional override
       // must remove the old key instead of silently retaining its prior value.
       for (const field of cardSchema) if (!(field.name in value)) delete this._config[field.name];
       this._fireConfigChanged();
     });
-    this.shadowRoot.append(style, note, option, this._form);
+    this.shadowRoot.append(note, this._form);
   }
   _fireConfigChanged() {
     this.dispatchEvent(new CustomEvent('config-changed', {
@@ -80,7 +52,6 @@ class OmadaGuestAccessCardEditor extends HTMLElement {
   setConfig(config) {
     this._config = {...config};
     this._form.data = {...CARD_DEFAULTS, ...config};
-    this._submittedSwitch.checked = this._form.data.show_submitted_as;
   }
   set hass(hass) { this._form.hass = hass; }
 }
