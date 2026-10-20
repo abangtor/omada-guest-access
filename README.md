@@ -159,6 +159,8 @@ Entity IDs may have suffixes if multiple sites/integrations are installed. Find 
 
 To set or change a local guest label, **double-click the name on desktop** or **long-press it on mobile** (about 0.6 seconds) in pending requests or unexpired grants. Keyboard users can focus the name and press Enter or Space. The name text itself becomes editable in place, without a text box or dialog: press Enter or tap/click away to save, or Escape to discard. Clear the label and save to restore the submitted name. Label editing requires decision permissions and `show_actions: true`; the submitted name is preserved.
 
+To hide the “Submitted as: …” line below renamed guests, turn off **Show submitted guest names below labels** in the card editor or set `show_submitted_as: false` in YAML. This does not change the saved submitted name.
+
 ### Visual editor and visibility
 
 Edit the card to choose sensors, title, optional default-duration override (`0` for the 10-year Forever preset or 1–720 hours; blank follows integration options), history page size (1–50), compact spacing, and what to display. Existing YAML remains compatible; all sections/details are shown by default.
@@ -169,6 +171,7 @@ Edit the card to choose sensors, title, optional default-duration override (`0` 
 | `show_pending` | `true` | Pending requests section |
 | `show_active` | `true` | Unexpired grants section |
 | `show_history` | `true` | Admin history section; hidden history is not fetched |
+| `show_submitted_as` | `true` | “Submitted as: …” below renamed guests in pending requests and unexpired grants |
 | `show_notes` | `true` | Guest notes in pending requests and history |
 | `show_mac` | `true` | MAC address labels |
 | `show_timestamps` | `true` | Requested, expiry, update, and consent timestamps |

@@ -2,7 +2,7 @@
 const CARD_DEFAULTS = {
   history_page_size: 20,
   show_title: true, show_pending: true, show_active: true, show_history: true,
-  show_notes: true, show_mac: true, show_timestamps: true, show_actions: true,
+  show_submitted_as: true, show_notes: true, show_mac: true, show_timestamps: true, show_actions: true,
   show_notices: true, show_empty: true, show_duration_selector: true, show_history_details: true,
   show_decision_user: true, show_terms: true, compact: false,
 };
@@ -10,6 +10,7 @@ const CARD_LABELS = {
   title: 'Title', pending_entity: 'Pending requests sensor', active_entity: 'Active sessions sensor',
   duration_hours: 'Default approval override in hours (blank: integration default)', history_page_size: 'History requests per page',
   show_title: 'Show title', show_pending: 'Show pending requests', show_active: 'Show unexpired grants',
+  show_submitted_as: 'Show submitted guest names below labels',
   show_history: 'Show request history (administrators only)', show_notes: 'Show guest notes',
   show_mac: 'Show MAC addresses', show_timestamps: 'Show timestamps', show_actions: 'Show action buttons',
   show_duration_selector: 'Show alternative approval duration dropdown', show_notices: 'Show explanatory notices', show_empty: 'Show empty sections',
@@ -449,7 +450,7 @@ class OmadaGuestAccessCard extends HTMLElement {
       }
       name.addEventListener('contextmenu', event => { event.preventDefault(); });
     }
-    if (item.admin_label && item.guest_name && item.admin_label !== item.guest_name) {
+    if (this._config.show_submitted_as && item.admin_label && item.guest_name && item.admin_label !== item.guest_name) {
       this._node('small', `Submitted as: ${item.guest_name}`, parent);
     }
   }
