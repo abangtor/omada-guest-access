@@ -10,6 +10,7 @@ A Home Assistant custom integration and separate captive portal for approval-bas
 
 - Dedicated portal listener, default port `8088`, independent of HA's main HTTP interface.
 - EAP and gateway redirect parsing, name/note submission, guest-specific status polling.
+- Persistent browser recognition: automatically restore an approved guest on a randomized MAC, revoke the old MAC, and preserve the original access expiry.
 - Returning-guest name/note prefilling in the same browser for 30 days, with opt-out and forget controls.
 - Automatic registration and version updates for the Lovelace card in storage-managed resources.
 - Hotspot Operator login with isolated cookies, CSRF tokens, bounded HTTP timeouts, and one expired-session retry.
@@ -68,9 +69,23 @@ The listener itself serves HTTP. Terminate HTTPS at the proxy; do not proxy gues
 
 ## Returning guests and reload behavior
 
-After a successful request, the portal saves only the guest's **name and note** in that browser's local storage. A new visit to the same portal/controller/site prefills those fields for up to **30 days since the last successful submission**. By default, guests can edit them, uncheck **Remember my name and note**, or use **Forget saved details**. Both controls can be hidden independently in integration options; hiding the checkbox keeps browser-side remembering enabled, while hiding the forget button removes only its portal UI. These controls also appear inside `form_html` in custom Jinja templates.
+### Automatic recognition across MAC changes
 
-This is browser-local convenience, not identification or automatic approval. A new session still requires a request and fresh terms acceptance. No request/session tokens or consent are stored in the remembered profile; other guests' history is never looked up by MAC. The fields are shared with anyone using that same browser profile. Forgetting details clears the browser copy, not HA's retained request history. Expired profiles are discarded on the next visit.
+A new access request sets a random **256-bit browser credential** in a persistent, HttpOnly cookie, scoped to this integration entry. Once the host approves that request, returning to the same portal from that browser automatically restores access, including when the phone has rotated its private MAC. No name entry, request button, or repeat host approval is needed while the original grant is still valid. This also works with custom portal templates: recognition happens server-side.
+
+For a changed MAC, the integration first reads Hotspot Manager and deauthenticates the previous External Portal grant with confirmation (or confirms it is already inactive). It then authorizes the new MAC for **only the remaining duration**, without rounding up to hours or resetting the original expiry. The existing request, name, admin label, approval attribution and consent are retained. The Forever preset keeps its original approximately ten-year deadline. A persisted destination journal allows retries after controller errors or HA restarts without losing track of a possibly authorized new MAC. If deauthentication is disabled, ambiguous, or fails, the transfer stops without authorizing another MAC.
+
+The cookie lasts up to **400 days**, refreshed on recognized visits; that lifetime never extends access. HA stores only its SHA-256 hash, not the bearer credential. Neither the key nor its hash is exposed in portal JSON, page scripts, sensors, history or lifecycle events. Pending, denied, expired, revoked and deleted approvals cannot restore access. The credential is restricted to the original site and SSID (or gateway VLAN). Changed mandatory terms require a new consent/request flow.
+
+**Browser limitations:** the phone must open the same portal hostname using a browser/captive assistant that retains this cookie. Clearing cookies, private browsing, switching browsers, or a captive assistant that discards/isolates its cookie jar means recognition is unavailable and normal approval is required. No website can force iOS/Android captive assistants to retain storage or access another browser's cookies. Use HTTPS and a stable portal hostname. The existing guest-ingress restrictions remain essential: the bearer key proves possession of a prior approval, but Omada's unsigned redirect still does not prove the supplied connection metadata.
+
+**Upgrading:** approvals created before this feature have no credential and cannot be safely claimed just by knowing the name or MAC. Those guests need one new request/approval to enroll the browser. Cancel access through the integration to disable recognition; if removing a guest directly in Omada, also clear the corresponding local approval/history (for example, Forget all local guest records), otherwise that still-valid local approval may restore access. Shared browser profiles share the credential.
+
+### Optional name/note prefilling
+
+Separately, after a successful request, the portal saves the guest's **name and note** in that browser's local storage. A new visit to the same portal/controller/site prefills those fields for up to **30 days since the last successful submission**. By default, guests can edit them, uncheck **Remember my name and note**, or use **Forget saved details**. Both controls can be hidden independently in integration options; hiding the checkbox keeps browser-side remembering enabled, while hiding the forget button removes only its portal UI. These controls also appear inside `form_html` in custom Jinja templates.
+
+This local-storage profile is only a convenience for forms when automatic recognition is unavailable; it is separate from the HttpOnly approval cookie. No authorization credential or consent is stored in the remembered name/note profile. Unchecking Remember or selecting Forget saved details clears only the saved name/note, not the approval cookie or HA history. To remove browser recognition locally, clear site cookies; to invalidate it server-side, cancel the approval or delete its local record. Expired name/note profiles are discarded on the next visit.
 
 HA restarts do not erase this browser storage, but Android captive windows may discard it, and Chrome/private tabs/other browsers have separate storage. If storage is disabled, the form continues to work without prefilling. Details submitted before installing this feature are not retroactively remembered.
 
@@ -231,7 +246,9 @@ Omit `status` for all statuses. `query` is case-insensitive (maximum 120 charact
 
 Services accept administrators, users selected in **Users allowed to approve, deny, or cancel guest access**, and trusted HA automation/system contexts. User-initiated decisions persist `decision_user_id`; system decisions have no user ID. Events include `entry_id` for multi-site automation routing.
 
-Events: `omada_guest_access_portal_connected`, `omada_guest_access_request_created`, `omada_guest_access_request_approved`, `omada_guest_access_request_denied`, `omada_guest_access_request_expired`, `omada_guest_access_access_revoked`, and `omada_guest_access_omada_api_error`.
+`omada_guest_access_access_transferred` fires after successful browser restoration. It includes the request summary, current `client_mac`, `previous_client_mac`, and unchanged `access_expires_at`; the original approver remains `decision_user_id`. Same-MAC restoration can emit it too. It does not fire another approval/request-created event or expose the browser credential.
+
+Events: `omada_guest_access_portal_connected`, `omada_guest_access_request_created`, `omada_guest_access_request_approved`, `omada_guest_access_request_denied`, `omada_guest_access_request_expired`, `omada_guest_access_access_revoked`, `omada_guest_access_access_transferred`, and `omada_guest_access_omada_api_error`.
 
 `omada_guest_access_portal_connected` fires when a device first reaches the
 external portal with a valid Omada redirect context. It includes the client
@@ -371,3 +388,7 @@ The default remains on, and `show_submitted_as: false` still works in YAML.
 Update/redownload the integration, restart Home Assistant, and reload the dashboard
 to load the new editor. Storage-managed card resources automatically change to
 `?v=1.4.10`; YAML-managed resources need that version updated manually.
+
+## Upgrade notes for 1.5.0
+
+Persistent browser approvals now survive MAC rotation. New requests enroll a browser automatically; existing approvals require a new request/approval once. Browser-cookie retention and Hotspot Manager deauthentication support are required for seamless MAC transfers. Returning guests never receive a fresh full-duration grant.

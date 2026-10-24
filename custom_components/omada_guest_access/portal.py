@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import logging
 import re
+import secrets
 from collections import defaultdict, deque
 from dataclasses import replace
 from datetime import timedelta
+from hashlib import sha256
 from ipaddress import ip_address, ip_network
 from typing import Any
 from urllib.parse import urlsplit
@@ -36,17 +38,19 @@ from .portal_render import PortalTemplateError, _page
 _LOGGER = logging.getLogger(__name__)
 
 _SESSION_COOKIE = "omada_guest_portal"
+_BROWSER_KEY_MAX_AGE = 400 * 24 * 60 * 60
 
 _MAC = re.compile(r"^(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$")
 
 
 class GuestPortal:
-    """Serve one guest portal listener with opaque, short-lived portal sessions."""
+    """Serve short-lived connection sessions and persistent browser credentials."""
 
     def __init__(self, hass: HomeAssistant, coordinator: OmadaGuestAccessCoordinator, port: int) -> None:
         self.hass = hass
         self.coordinator = coordinator
         self.port = port
+        self._browser_cookie = f"omada_guest_identity_{coordinator.entry.entry_id}"
         self._runner: web.AppRunner | None = None
         self._sessions: dict[str, dict[str, Any]] = {}
         self._attempts: defaultdict[str, deque] = defaultdict(deque)
@@ -155,6 +159,20 @@ class GuestPortal:
                 "request_id": None,
             }
             self.coordinator.portal_connected(context, ip)
+        current_item = self.coordinator.requests.get(session["request_id"], {})
+        if current_item and (
+            current_item.get("client_mac") != context.client_mac or current_item.get("browser_restore_pending")
+        ):
+            session["request_id"] = None
+        if session["request_id"] is None:
+            try:
+                restored = await self.coordinator.async_resume_browser(
+                    request.cookies.get(self._browser_cookie, ""), context
+                )
+            except ValueError as err:
+                raise web.HTTPServiceUnavailable(text=str(err)) from err
+            if restored is not None:
+                session["request_id"] = restored["request_id"]
         request_id = session["request_id"]
         item = self.coordinator.requests.get(request_id) if request_id else None
         if item is None:
@@ -190,7 +208,19 @@ class GuestPortal:
             samesite="Lax",
             path="/",
         )
+        if request.cookies.get(self._browser_cookie) and session["request_id"]:
+            item = self.coordinator.requests.get(session["request_id"], {})
+            key = request.cookies[self._browser_cookie]
+            if item.get("browser_key_hash") == sha256(key.encode()).hexdigest():
+                self._set_browser_cookie(response, request, key)
         return response
+
+    def _set_browser_cookie(self, response: web.Response, request: web.Request, key: str) -> None:
+        public_url = self.coordinator.config.get(CONF_PORTAL_URL) or str(request.url)
+        response.set_cookie(
+            self._browser_cookie, key, max_age=_BROWSER_KEY_MAX_AGE,
+            httponly=True, secure=urlsplit(public_url).scheme == "https", samesite="Lax", path="/",
+        )
 
     async def _create_request(self, request: web.Request) -> web.Response:
         session = self._session_for(request)
@@ -218,6 +248,8 @@ class GuestPortal:
             raise web.HTTPBadRequest(
                 text="A name of up to 120 characters and an optional 500-character note are required"
             )
+        key = secrets.token_hex(32)
+        digest = sha256(key.encode()).hexdigest()
         try:
             result = await self.coordinator.async_create_request(
                 name,
@@ -225,11 +257,17 @@ class GuestPortal:
                 note,
                 terms_accepted=body.get("terms_accepted") is True,
                 terms_version=session["terms_version"],
+                browser_key_hash=digest,
             )
         except ValueError as err:
             raise web.HTTPConflict(text=str(err)) from err
         session["request_id"] = result["request_id"]
-        return web.json_response(_public_request(result, session["context"]), status=201)
+        response = web.json_response(_public_request(result, session["context"]), status=201)
+        # A duplicate MAC is not proof of ownership: never issue a credential
+        # for a pre-existing request to a different browser.
+        if result.get("browser_key_hash") == digest:
+            self._set_browser_cookie(response, request, key)
+        return response
 
     async def _request_status(self, request: web.Request) -> web.Response:
         session = self._session_for(request)

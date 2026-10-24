@@ -30,6 +30,7 @@ from .const import (
     DEFAULT_RETENTION_DAYS,
     DOMAIN,
     EVENT_ACCESS_REVOKED,
+    EVENT_ACCESS_TRANSFERRED,
     EVENT_OMADA_API_ERROR,
     EVENT_PORTAL_CONNECTED,
     EVENT_REQUEST_APPROVED,
@@ -176,6 +177,7 @@ class OmadaGuestAccessCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         *,
         terms_accepted: bool = False,
         terms_version: str | None = None,
+        browser_key_hash: str | None = None,
     ) -> Mapping[str, Any]:
         if not isinstance(guest_name, str) or not 1 <= len(guest_name.strip()) <= 120:
             raise ValueError("A name of up to 120 characters is required")
@@ -203,6 +205,7 @@ class OmadaGuestAccessCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             request_id = uuid4().hex
             item = {
                 "request_id": request_id,
+                "browser_key_hash": browser_key_hash,
                 "guest_name": guest_name.strip(),
                 "admin_label": None,
                 "client_mac": context.client_mac,
@@ -255,6 +258,75 @@ class OmadaGuestAccessCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             await self._async_save()
             self._publish()
             self._event(EVENT_REQUEST_APPROVED, item)
+            return deepcopy(item)
+
+    async def async_resume_browser(self, key: str, context: PortalContext) -> Mapping[str, Any] | None:
+        """Use a browser bearer credential, never a name/MAC, to resume a grant.
+
+        Journal the destination before authorization. If authorization or saving
+        its result fails, retry/restart can revoke that possible grant before
+        moving again, without losing track of an authorized MAC.
+        """
+        if not isinstance(key, str) or len(key) != 64:
+            return None
+        digest = sha256(key.encode()).hexdigest()
+        async with self._lock:
+            self._ensure_running()
+            await self._expire_locked()
+            item = next(
+                (row for row in self.requests.values()
+                 if row.get("browser_key_hash") == digest and row["status"] == "approved"),
+                None,
+            )
+            if item is None:
+                return None
+            old = PortalContext(**item["portal_context"])
+            # A remembered approval is scoped to this network, not every SSID/VLAN.
+            if (old.site, old.is_wireless, old.ssid_name, old.vlan_id) != (
+                context.site, context.is_wireless, context.ssid_name, context.vlan_id
+            ):
+                return None
+            if self.config.get(CONF_REQUIRE_TERMS, False) and item.get("terms_version") != self.terms_version:
+                return None
+            if any(
+                row["request_id"] != item["request_id"]
+                and row["client_mac"] == context.client_mac
+                and row["status"] in _ACTIVE
+                for row in self.requests.values()
+            ):
+                raise ValueError("This device already has another guest request")
+            previous_mac = old.client_mac
+            try:
+                if old.client_mac != context.client_mac:
+                    await self.client.async_revoke(old, allow_missing=True)
+                # Even the same MAC can need reauthorization after a controller
+                # restart. An existing portal session avoids repeat calls on refresh.
+                before_journal = deepcopy(item)
+                item.update(
+                    client_mac=context.client_mac, portal_context=asdict(context),
+                    browser_restore_pending=True, updated_at=dt_util.utcnow(),
+                )
+                try:
+                    await self._async_save()
+                except Exception:
+                    item.clear()
+                    item.update(before_journal)
+                    raise
+                deadline = item.get("access_expires_at")
+                if deadline is None:
+                    await self.client.async_authorize(context, 0)
+                else:
+                    await self.client.async_authorize(context, 0, expires_at=deadline)
+            except OmadaApiError as err:
+                self._api_error(item["request_id"], err)
+                raise ValueError(f"Omada access restoration failed: {err}") from err
+            item.update(browser_restore_pending=False, updated_at=dt_util.utcnow())
+            await self._async_save()
+            self._publish()
+            self.hass.bus.async_fire(
+                EVENT_ACCESS_TRANSFERRED,
+                {"entry_id": self.entry.entry_id, **event_data(item), "previous_client_mac": previous_mac},
+            )
             return deepcopy(item)
 
     async def async_deny_request(

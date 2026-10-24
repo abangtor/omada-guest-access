@@ -28,6 +28,7 @@ jobs:
       - run: ruff check .
       - run: pytest
       - run: python -m playwright install --with-deps chromium
+      - run: pytest -q tests/browser_identity.py
       - run: python tests/browser_smoke.py
         env:
           PYTHONPATH: .

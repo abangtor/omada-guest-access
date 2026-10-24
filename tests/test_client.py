@@ -265,3 +265,35 @@ async def test_redirect_targets_are_restricted(hass, config, aiohttp_server, soc
         assert "hidden" not in str(error.value)
     finally:
         await client.async_close()
+
+
+async def test_remaining_duration_recomputed_after_auth_retry(
+    hass, config, context, aiohttp_server, socket_enabled, freezer
+):
+    deadline = dt_util.utcnow() + timedelta(minutes=17, seconds=23, milliseconds=456)
+    authorizations = []
+
+    async def login(request):
+        freezer.tick(timedelta(seconds=2))
+        return web.json_response({"errorCode": 0, "result": {"token": "fresh"}})
+
+    async def authorize(request):
+        authorizations.append(await request.json())
+        assert int(authorizations[-1]["time"]) == int((deadline - dt_util.utcnow()).total_seconds() * 1000)
+        return web.json_response({"errorCode": -1005 if len(authorizations) == 1 else 0})
+
+    app = web.Application()
+    app.router.add_post("/controller/api/v2/hotspot/login", login)
+    app.router.add_post("/controller/api/v2/hotspot/extPortal/auth", authorize)
+    server = await aiohttp_server(app)
+    config["controller_url"] = str(server.make_url("/"))
+    client = OmadaExternalPortalClient(hass, config)
+    try:
+        assert await client.async_authorize(context, 0, expires_at=deadline) == deadline
+        assert int(authorizations[0]["time"]) - int(authorizations[1]["time"]) == 2000
+        freezer.tick(timedelta(hours=1))
+        with pytest.raises(OmadaApiError, match="expired"):
+            await client.async_authorize(context, 0, expires_at=deadline)
+        assert len(authorizations) == 2
+    finally:
+        await client.async_close()

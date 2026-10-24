@@ -57,7 +57,7 @@ def context():
 def mock_client():
     client = MagicMock()
     client.async_test_connection = AsyncMock()
-    client.async_authorize = AsyncMock(side_effect=lambda context, hours: dt_util.utcnow() + timedelta(hours=hours))
+    client.async_authorize = AsyncMock(side_effect=lambda context, hours, *, expires_at=None: expires_at or dt_util.utcnow() + timedelta(hours=hours))
     client.async_revoke = AsyncMock()
     client.async_close = AsyncMock()
     client.supports_revoke = False

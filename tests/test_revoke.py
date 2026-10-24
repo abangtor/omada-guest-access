@@ -139,3 +139,19 @@ async def test_cancel_persists_and_fires_event(coordinator, context, hass):
     assert result["status"] == "revoked"
     assert result["decision_user_id"] == "administrator"
     assert events
+
+
+async def test_transfer_allows_already_inactive_old_mac(hass, config, context):
+    from unittest.mock import AsyncMock
+
+    client = OmadaExternalPortalClient(hass, config)
+    client._async_hotspot_clients = AsyncMock(return_value=[])
+    client._async_authenticated_request = AsyncMock()
+    try:
+        await client.async_revoke(context, allow_missing=True)
+        client._async_authenticated_request.assert_not_called()
+        client._async_hotspot_clients.side_effect = OmadaApiError("permission denied")
+        with pytest.raises(OmadaApiError, match="permission denied"):
+            await client.async_revoke(context, allow_missing=True)
+    finally:
+        await client.async_close()

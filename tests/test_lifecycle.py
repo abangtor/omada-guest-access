@@ -70,9 +70,12 @@ async def test_full_ha_setup_static_resource_entities_and_reload(
     http = await hass_client()
     await hass.async_block_till_done()
     coordinator = entry.runtime_data
+    from homeassistant.loader import async_get_integration
+
+    integration = await async_get_integration(hass, "omada_guest_access")
     resources = hass.data["lovelace"].resources
     assert any(
-            item["url"] == "/omada_guest_access/omada-guest-access-card.js?v=1.4.8"
+        item["url"] == f"/omada_guest_access/omada-guest-access-card.js?v={integration.version}"
         and item["type"] == "module"
         for item in resources.async_items()
     )

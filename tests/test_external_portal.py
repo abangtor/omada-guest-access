@@ -54,8 +54,8 @@ def test_external_portal_payload_uses_documented_wireless_fields() -> None:
     assert payload["time"] == "28800000"
 
 
-@pytest.mark.parametrize("hours,expected", [(1, "3600000000"), (8, "28800000000"),
-    (24, "86400000000"), (168, "604800000000"), (0, "315360000000000")])
+@pytest.mark.parametrize("hours,expected", [(1, "3600000"), (8, "28800000"),
+    (24, "86400000"), (168, "604800000"), (0, "315360000000")])
 @pytest.mark.parametrize("wireless", [True, False])
 def test_authorization_sends_relative_duration(hours, expected, wireless):
     context = PortalContext(client_mac="AA:BB:CC:DD:EE:FF", site="Default",

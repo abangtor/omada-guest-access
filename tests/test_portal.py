@@ -75,9 +75,10 @@ async def test_valid_portal_redirect_fires_connection_event_once_per_session(
         "redirect_hostname": "vpn.example.com",
     }
 
+    cookie = first.cookies["omada_guest_portal"].value
     # Re-opening the redirected URL with the session cookie is a refresh, not
     # another device connection notification.
-    second = await client.get("/", params=query)
+    second = await client.get("/", params=query, headers={"Cookie": f"omada_guest_portal={cookie}"})
     assert second.status == 200
     await hass.async_block_till_done()
     assert len(events) == 1

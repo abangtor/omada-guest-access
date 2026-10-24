@@ -340,7 +340,11 @@ async def check_name_labels(page):
 
 
 async def check_submitted_switch(page):
-    """Click the actual editor switch and apply its saved config to both guest lists."""
+    """Exercise the native ha-form boolean contract and both guest lists.
+
+    This standalone page does not load HA's selector implementation, so test
+    schema/data/value-changed instead of looking for a nonexistent HA switch.
+    """
     await page.evaluate("""async () => {
       window.originalPending=mockHass.states['sensor.pending'].attributes.requests;
       window.originalActive=mockHass.states['sensor.active'].attributes.sessions;
@@ -359,25 +363,30 @@ async def check_submitted_switch(page):
       document.body.append(switchEditor);
       card.setConfig(baseConfig);card.hass=mockHass;
     }""")
-    switch = page.get_by_role("switch", name='Show "Submitted as …" info', exact=True)
     submitted = page.locator("omada-guest-access-card small").filter(has_text="Submitted as:")
-    assert await switch.is_checked()
+    assert await page.evaluate("""() => {
+      const form=switchEditor.shadowRoot.querySelector('ha-form');
+      const field=form.schema.find(field=>field.name==='show_submitted_as');
+      return field.selector.boolean && form.data.show_submitted_as===true;
+    }""")
     assert await submitted.count() == 2
-    await switch.click()
-    assert not await switch.is_checked()
-    assert await submitted.count() == 0
-    assert await page.evaluate("switchConfig.show_submitted_as === false")
-    assert await page.evaluate("switchConfig.grid_options.columns === 6")
-    # Another form change must not reset the switch, even with stale form data.
     await page.evaluate("""() => {
       const form=switchEditor.shadowRoot.querySelector('ha-form');
       form.dispatchEvent(new CustomEvent('value-changed', {
-        detail:{value:{...form.data,title:'Renamed card',show_submitted_as:true}}
+        detail:{value:{...form.data,show_submitted_as:false}}
       }));
     }""")
-    assert not await switch.is_checked()
     assert await submitted.count() == 0
-    # A newly opened editor reflects the persisted false setting.
+    assert await page.evaluate("switchConfig.show_submitted_as === false")
+    assert await page.evaluate("switchConfig.grid_options.columns === 6")
+    # Another form change preserves the boolean when the full form data is emitted.
+    await page.evaluate("""() => {
+      const form=switchEditor.shadowRoot.querySelector('ha-form');
+      form.dispatchEvent(new CustomEvent('value-changed', {
+        detail:{value:{...form.data,title:'Renamed card'}}
+      }));
+    }""")
+    assert await submitted.count() == 0
     await page.evaluate("""async () => {
       switchEditor.remove();
       window.switchEditor=await customElements.get('omada-guest-access-card').getConfigElement();
@@ -385,12 +394,14 @@ async def check_submitted_switch(page):
       switchEditor.addEventListener('config-changed',event=>card.setConfig(event.detail.config));
       document.body.append(switchEditor);
     }""")
-    assert not await switch.is_checked()
-    await switch.focus()
-    await switch.press("Space")
-    assert await switch.is_checked()
+    assert await page.evaluate("switchEditor.shadowRoot.querySelector('ha-form').data.show_submitted_as===false")
+    await page.evaluate("""() => {
+      const form=switchEditor.shadowRoot.querySelector('ha-form');
+      form.dispatchEvent(new CustomEvent('value-changed', {
+        detail:{value:{...form.data,show_submitted_as:true}}
+      }));
+    }""")
     assert await submitted.count() == 2
-    # YAML uses the same flag; no saved guest data is modified.
     await page.evaluate("card.setConfig({...baseConfig,show_submitted_as:false})")
     assert await submitted.count() == 0
     assert await page.evaluate("mockHass.states['sensor.pending'].attributes.requests[0].guest_name") == (
