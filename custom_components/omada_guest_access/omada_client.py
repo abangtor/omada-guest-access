@@ -18,6 +18,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
 from homeassistant.util import dt as dt_util
 
+from .api_errors import describe_api_error
 from .client_names import sanitize_client_name
 from .const import (
     CONF_CONTROLLER_ID,
@@ -318,11 +319,13 @@ class OmadaExternalPortalClient:
         if type(code) is not int:
             raise OmadaApiError("Omada returned an invalid API error code")
         if code != 0:
-            # Omada uses -1005 for an expired/missing session. Do not expose
-            # arbitrary controller response text (which can contain secrets).
+            # Keep the existing -1005 authentication retry behavior. Its UI
+            # description is "Operation forbidden", not proof of bad credentials.
+            # Never expose arbitrary controller response text (may contain secrets).
+            detail = describe_api_error(code)
             if not csrf or code == -1005:
-                raise OmadaAuthError(f"Omada rejected the login/session (error code {code})")
-            raise OmadaApiError(f"Omada rejected the API operation (error code {code})")
+                raise OmadaAuthError(f"Omada rejected the login/session: {detail}")
+            raise OmadaApiError(f"Omada rejected the API operation: {detail}")
         return result
 
 

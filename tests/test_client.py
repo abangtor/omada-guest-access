@@ -176,7 +176,7 @@ async def test_certificate_failure_is_distinct_and_sanitized(hass, config):
 
 
 @pytest.mark.parametrize('code', [-30109, 'private-data', True])
-async def test_login_error_only_exposes_numeric_code(hass, config, code, aiohttp_server, socket_enabled):
+async def test_login_error_excludes_untrusted_response_content(hass, config, code, aiohttp_server, socket_enabled):
     async def login(request):
         return web.json_response({'errorCode': code, 'msg': 'private-data', 'result': {'token': 'secret-token'}})
 
@@ -344,7 +344,7 @@ async def test_controller_name_sync_patch_retry(hass, config, context, aiohttp_s
     (None, 0, 0, "accessible sites"),
     ([None, {}, {"name": "Default", "key": 7}], 0, 0, "missing or ambiguous"),
     ([], -41011, 0, "site lookup failed:.*-41011"),
-    ([{"name": "Default", "key": "site-id"}], 0, -41011, "client rename failed:.*-41011"),
+    ([{"name": "Default", "key": "site-id"}], 0, -41011, "client rename failed:.*This client does not exist.*-41011"),
 ])
 async def test_name_sync_site_resolution_and_failure_stage(
     hass, config, context, aiohttp_server, socket_enabled, sites, lookup_code, rename_code, error
@@ -379,5 +379,45 @@ async def test_name_sync_site_resolution_and_failure_stage(
         else:
             await client.async_set_client_name(context, "Alex")
             assert updates == [(sites[0]["key"], {"name": "Alex"})]
+    finally:
+        await client.async_close()
+
+
+@pytest.mark.parametrize(("code", "description"), [
+    (-41011, "This client does not exist."),
+    (-41005, "The authorization information does not exist."),
+    (-33000, "This site does not exist."),
+    (-30109, "Invalid username or password."),
+    (-1505, "The current user does not have permissions to access this site."),
+    (-1005, "Operation forbidden."),
+    (-1200, "You have been logged out of the controller."),
+    (-1001, "Invalid request parameters."),
+    (-41009, "Failed to authorize this client."),
+    (-41017, "Unauth failed because gateway not existed or disconnected."),
+    (-41518, "This SSID does not exist."),
+    (-987654, "Unknown controller error."),
+    (41011, "Unknown controller error."),
+])
+@pytest.mark.parametrize("csrf", [False, True])
+async def test_api_errors_use_safe_verified_descriptions(
+    hass, config, aiohttp_server, socket_enabled, code, description, csrf
+):
+    async def rejected(request):
+        return web.json_response({"errorCode": code, "msg": "private-response-text",
+                                  "result": {"token": "secret-token"}})
+
+    app = web.Application()
+    app.router.add_post("/controller/api/v2/test", rejected)
+    server = await aiohttp_server(app)
+    client = OmadaExternalPortalClient(hass, config | {"controller_url": str(server.make_url("/"))})
+    try:
+        expected_type = OmadaAuthError if not csrf or code == -1005 else OmadaApiError
+        with pytest.raises(expected_type) as raised:
+            await client._async_raw_request("/test", {}, csrf=csrf)
+        detail = str(raised.value)
+        assert description in detail
+        assert f"(error code {code})" in detail
+        assert "private-response-text" not in detail
+        assert "secret-token" not in detail
     finally:
         await client.async_close()

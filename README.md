@@ -443,3 +443,19 @@ as a site ID. Missing or ambiguous sites fail without renaming a client. API err
 now identify site lookup versus client rename; controller response text is not logged.
 This addresses a likely site-resolution cause of rejected operations such as
 `-41011`; that code alone does not establish the cause on every controller build.
+
+## Readable Omada API errors (1.5.5)
+
+Controller rejections now include a static, human-readable description alongside
+exact error codes in integration logs and API-error events. Covered codes include
+invalid requests, credentials and permissions, logged-out sessions, missing sites
+or clients, authorization and deauthorization failures, and related portal errors.
+For example, `-41011` now reads **This client does not exist. (error code -41011)**.
+An existing approval may refer to a client MAC no longer present in Omada; this
+message does not by itself establish why the client is missing.
+
+Descriptions are verified against Controller **6.0.0.39**'s served English error
+catalog (`/locale/lan-1770199100768/en_US/err.js`). Other firmware may differ.
+Unknown codes remain visible as **Unknown controller error. (error code …)**.
+No controller-supplied message or other response content is included in the error.
+Retry, approval, and name-synchronization behavior is unchanged.
