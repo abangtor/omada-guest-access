@@ -373,17 +373,30 @@ class OmadaClientNameClient(OmadaExternalPortalClient):
             for attempt in range(2):
                 if not self._csrf_token:
                     await self._async_login()
+                stage = "controller site lookup"
                 try:
+                    # Portal redirects carry the display name, not necessarily the
+                    # internal site key required by the controller client API.
                     site_response = await self._async_raw_request(
-                        f"/sites/{quote(context.site, safe='')}", None, csrf=True, method="GET"
+                        "/users/current", None, csrf=True, method="GET"
                     )
-                    site = site_response.get("result")
-                    site_id = site.get("id") if isinstance(site, dict) else None
-                    if not isinstance(site_id, str) or not site_id:
-                        raise OmadaApiError("Controller did not return a site ID for name synchronization")
+                    user = site_response.get("result")
+                    privilege = user.get("privilege") if isinstance(user, dict) else None
+                    sites = privilege.get("sites") if isinstance(privilege, dict) else None
+                    if not isinstance(sites, list):
+                        raise OmadaApiError("Controller did not return accessible sites for name synchronization")
+                    matches = {
+                        site["key"] for site in sites
+                        if isinstance(site, dict) and isinstance(site.get("key"), str) and site["key"]
+                        and context.site in (site.get("name"), site["key"])
+                    }
+                    if len(matches) != 1:
+                        raise OmadaApiError("Portal site is missing or ambiguous in the controller account's accessible sites")
+                    site_id = matches.pop()
                     mac = context.client_mac.upper().replace(":", "-")
                     if not re.fullmatch(r"(?:[0-9A-F]{2}-){5}[0-9A-F]{2}", mac):
                         raise ValueError("Invalid client MAC address")
+                    stage = "controller client rename"
                     await self._async_raw_request(
                         f"/sites/{quote(site_id, safe='')}/clients/{mac}",
                         {"name": name.strip()}, csrf=True, method="PATCH"
@@ -393,3 +406,5 @@ class OmadaClientNameClient(OmadaExternalPortalClient):
                     self._csrf_token = None
                     if attempt:
                         raise
+                except OmadaApiError as err:
+                    raise OmadaApiError(f"Omada name synchronization {stage} failed: {err}") from err

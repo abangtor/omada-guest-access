@@ -426,7 +426,7 @@ Hotspot Operator credentials alone cannot rename controller clients.
 - Updates the Omada display name only, including an existing controller name;
   does not change DHCP hostnames, DNS, authorization, or other client settings.
   Disabling stops updates; it does not restore previous controller names.
-- Uses the controller web API (`POST /login`, `GET /sites/{site}`, then name-only
+- Uses the controller web API (`POST /login`, `GET /users/current` to resolve the portal site name against the account's accessible site keys, then name-only
   `PATCH /sites/{siteId}/clients/{mac}`), with a session isolated from Hotspot
   Manager. This is not the documented External Portal API; controller versions
   and permissions may differ. Protocol reference: the
@@ -434,3 +434,12 @@ Hotspot Operator credentials alone cannot rename controller clients.
 
 Update/redownload the integration and restart Home Assistant to install this feature.
 Live controller rename behavior still needs verification on your installation.
+
+## Name synchronization compatibility fix (1.5.4)
+
+Controller client-name updates now resolve site display names (or existing site keys)
+using the signed-in account's accessible sites, rather than passing a display name
+as a site ID. Missing or ambiguous sites fail without renaming a client. API errors
+now identify site lookup versus client rename; controller response text is not logged.
+This addresses a likely site-resolution cause of rejected operations such as
+`-41011`; that code alone does not establish the cause on every controller build.

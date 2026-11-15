@@ -312,7 +312,9 @@ async def test_controller_name_sync_patch_retry(hass, config, context, aiohttp_s
 
     async def site(request):
         assert request.headers["Csrf-Token"] == str(len(logins))
-        return web.json_response({"errorCode": 0, "result": {"id": "site-id"}})
+        return web.json_response({"errorCode": 0, "result": {
+            "privilege": {"sites": [{"name": "Default", "key": "site-id"}]}
+        }})
 
     async def update(request):
         updates.append(await request.json())
@@ -321,7 +323,7 @@ async def test_controller_name_sync_patch_retry(hass, config, context, aiohttp_s
 
     app = web.Application()
     app.router.add_post("/controller/api/v2/login", login)
-    app.router.add_get("/controller/api/v2/sites/Default", site)
+    app.router.add_get("/controller/api/v2/users/current", site)
     app.router.add_patch("/controller/api/v2/sites/site-id/clients/AA-BB-CC-DD-EE-FF", update)
     server = await aiohttp_server(app)
     client = OmadaClientNameClient(hass, config | {"controller_url": str(server.make_url("/"))})
@@ -330,5 +332,52 @@ async def test_controller_name_sync_patch_retry(hass, config, context, aiohttp_s
         assert len(logins) == 2
         assert logins[0] == {"username": config["username"], "password": config["password"]}
         assert updates == [{"name": "Name with quotes"}] * 2
+    finally:
+        await client.async_close()
+
+
+@pytest.mark.parametrize(("sites", "lookup_code", "rename_code", "error"), [
+    ([{"name": "Default", "key": "site-id"}], 0, 0, None),
+    ([{"name": "Other", "key": "Default"}], 0, 0, None),
+    ([], 0, 0, "missing or ambiguous"),
+    ([{"name": "Default", "key": "a"}, {"name": "Default", "key": "b"}], 0, 0, "missing or ambiguous"),
+    (None, 0, 0, "accessible sites"),
+    ([None, {}, {"name": "Default", "key": 7}], 0, 0, "missing or ambiguous"),
+    ([], -41011, 0, "site lookup failed:.*-41011"),
+    ([{"name": "Default", "key": "site-id"}], 0, -41011, "client rename failed:.*-41011"),
+])
+async def test_name_sync_site_resolution_and_failure_stage(
+    hass, config, context, aiohttp_server, socket_enabled, sites, lookup_code, rename_code, error
+):
+    from custom_components.omada_guest_access.omada_client import OmadaClientNameClient
+
+    updates = []
+
+    async def login(request):
+        return web.json_response({"errorCode": 0, "result": {"token": "token"}})
+
+    async def current_user(request):
+        return web.json_response({"errorCode": lookup_code, "result": {"privilege": {"sites": sites}},
+                                  "msg": "private controller response"})
+
+    async def update(request):
+        updates.append((request.match_info["site"], await request.json()))
+        return web.json_response({"errorCode": rename_code, "msg": "private controller response"})
+
+    app = web.Application()
+    app.router.add_post("/controller/api/v2/login", login)
+    app.router.add_get("/controller/api/v2/users/current", current_user)
+    app.router.add_patch("/controller/api/v2/sites/{site}/clients/AA-BB-CC-DD-EE-FF", update)
+    server = await aiohttp_server(app)
+    client = OmadaClientNameClient(hass, config | {"controller_url": str(server.make_url("/"))})
+    try:
+        if error:
+            with pytest.raises(OmadaApiError, match=error) as raised:
+                await client.async_set_client_name(context, "Alex")
+            assert "private controller response" not in str(raised.value)
+            assert len(updates) == (1 if rename_code else 0)
+        else:
+            await client.async_set_client_name(context, "Alex")
+            assert updates == [(sites[0]["key"], {"name": "Alex"})]
     finally:
         await client.async_close()
