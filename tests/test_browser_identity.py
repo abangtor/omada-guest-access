@@ -163,7 +163,7 @@ async def test_browser_cookie_roundtrip_automatic_transfer(hass, coordinator, ai
     response = await client.get("/", params={**QUERY, "clientMac": "AA:BB:CC:DD:EE:02"})
     assert response.status == 200
     assert f'let id="{item["request_id"]}"' in await response.text()
-    assert "<form id='request' hidden>" in await response.text()
+    assert "<form id='request' hidden autocomplete='on'>" in await response.text()
     assert len(coordinator.requests) == 1
     coordinator.client.async_revoke.assert_awaited_once()
     coordinator.client.async_authorize.assert_awaited_once()

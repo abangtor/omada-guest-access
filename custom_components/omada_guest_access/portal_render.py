@@ -141,8 +141,8 @@ button:disabled{opacity:.6;cursor:wait}input[type=checkbox]{width:auto;margin-ri
 #status{margin-top:1rem}#terms{margin:1rem 0}p{white-space:pre-wrap;overflow-wrap:anywhere}
 .consent{display:block;margin:1rem 0}small{color:#52606d}
 </style></head><body>
-<h1>$title</h1><p>$message</p><form id='request'$form_hidden>
-<label>Your name<input name='guest_name' required maxlength='120' autocomplete='name'></label>
+<h1>$title</h1><p>$message</p><form id='request'$form_hidden autocomplete='on'>
+<label for='guest-name'>Your name</label><input id='guest-name' type='text' name='guest_name' required maxlength='120' autocomplete='name'>
 <label>Optional note<textarea name='note' maxlength='500' rows='4'></textarea></label>$terms
 ${remember_control}<button type='submit'>Request access</button>
 ${forget_control}</form><p id='status' role='status' aria-live='polite'></p><script id='portal-script' nonce='$nonce'>

@@ -266,7 +266,7 @@ async def test_reload_restores_request_without_duplicate(
         assert response.status == 200
         page = await response.text()
         assert f'let id="{request_id}"' in page
-        assert "<form id='request' hidden>" in page
+        assert "<form id='request' hidden autocomplete='on'>" in page
         assert "<textarea name='note' maxlength='500' rows='4'>" in page
         assert len(portal._sessions) == 1
         session_cookie = response.cookies["omada_guest_portal"]
@@ -303,7 +303,7 @@ async def test_reconnect_after_revocation_shows_a_new_request_form(
     assert response.status == 200
     page = await response.text()
     assert "let id=null" in page
-    assert "<form id='request' hidden>" not in page
+    assert "<form id='request' hidden autocomplete='on'>" not in page
     assert portal._sessions[headers["X-Portal-Token"]]["request_id"] is None
 
 
