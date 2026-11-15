@@ -18,6 +18,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
 from homeassistant.util import dt as dt_util
 
+from .client_names import sanitize_client_name
 from .const import (
     CONF_CONTROLLER_ID,
     CONF_CONTROLLER_URL,
@@ -363,8 +364,11 @@ class OmadaClientNameClient(OmadaExternalPortalClient):
 
     async def async_set_client_name(self, context: PortalContext, name: str) -> None:
         """Resolve the portal site, then change only the client's display name."""
-        if not isinstance(name, str) or not 1 <= len(name.strip()) <= 120:
-            raise ValueError("A client name of up to 120 characters is required")
+        if not isinstance(name, str):
+            raise ValueError("A client name is required")
+        name = sanitize_client_name(name)
+        if not name:
+            raise ValueError("A non-empty sanitized client name is required")
         async with self._lock:
             for attempt in range(2):
                 if not self._csrf_token:

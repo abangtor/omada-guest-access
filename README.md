@@ -394,7 +394,7 @@ to load the new editor. Storage-managed card resources automatically change to
 Persistent browser approvals now survive MAC rotation. New requests enroll a browser automatically; existing approvals require a new request/approval once. Browser-cookie retention and Hotspot Manager deauthentication support are required for seamless MAC transfers. Returning guests never receive a fresh full-duration grant.
 
 
-## Optional Omada client-name synchronization (1.5.1)
+## Optional Omada client-name synchronization (1.5.2)
 
 In **Settings → Devices & services → Omada Guest Access → Configure**, enable
 **Synchronize guest names to Omada** and enter the separate **controller username**
@@ -404,6 +404,17 @@ Hotspot Operator credentials alone cannot rename controller clients.
 
 - Disabled by default. This is an integration option, not a per-card setting.
 - Uses the admin/user label when provided; otherwise the guest-submitted name.
+- Optional **Omada name prefix** and **Omada name suffix** fields automatically wrap
+  the chosen name. Leave either blank to disable it; include your own separators
+  (e.g. prefix `Guest - ` and suffix ` - WiFi`). Each accepts up to 32 characters.
+- Before sending, names and affixes are Unicode-normalized (NFKC), markup removed,
+  and restricted to Unicode letters, numbers, combining marks, spaces and `- _ . ' ( )`.
+  Controls, bidi/zero-width characters and other punctuation/symbols are removed;
+  whitespace is collapsed. Local labels and guest names are not changed.
+  Empty sanitized admin labels fall back to the guest name; completely empty
+  names are skipped. The final name is limited to 120 characters, shortening the
+  name portion first to preserve both affixes. Changing affixes refreshes existing
+  active guests after the options reload, using the same name precedence.
 - Synchronizes on guest submission, approval, admin-label edits (including clearing
   a label), and remembered-device MAC changes. Existing pending/approved guests
   are synchronized on the next coordinator refresh after enabling or restarting.

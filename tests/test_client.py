@@ -329,6 +329,6 @@ async def test_controller_name_sync_patch_retry(hass, config, context, aiohttp_s
         await client.async_set_client_name(context, 'Name "with quotes"')
         assert len(logins) == 2
         assert logins[0] == {"username": config["username"], "password": config["password"]}
-        assert updates == [{"name": 'Name "with quotes"'}] * 2
+        assert updates == [{"name": "Name with quotes"}] * 2
     finally:
         await client.async_close()

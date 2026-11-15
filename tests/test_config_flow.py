@@ -298,6 +298,8 @@ async def test_extended_options_are_serializable(entry, flow_http):
     fields = {field["name"]: field for field in (await response.json())["data_schema"]}
     assert fields["portal_template"]["selector"]["text"]["multiline"]
     assert "duration_options" in fields
+    assert "name_sync_prefix" in fields
+    assert "name_sync_suffix" in fields
     assert "sync_client_names" in fields
     assert fields["name_sync_password"]["selector"]["text"]["type"] == "password"
     assert "enable_revoke" in fields
@@ -333,7 +335,25 @@ async def test_sync_options_require_credentials_and_persist(hass, entry):
         result["flow_id"], user_input={"sync_client_names": True}
     )
     assert result["errors"] == {"base": "invalid_config"}
-    settings = {"sync_client_names": True, "name_sync_username": "controller-user", "name_sync_password": "secret"}
+    settings = {"sync_client_names": True, "name_sync_username": "controller-user", "name_sync_password": "secret",
+                "name_sync_prefix": "Guest - ", "name_sync_suffix": " - WiFi"}
     result = await hass.config_entries.options.async_configure(result["flow_id"], user_input=settings)
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert all(entry.options[key] == value for key, value in settings.items())
+
+
+@pytest.mark.parametrize("key", ["name_sync_prefix", "name_sync_suffix"])
+@pytest.mark.parametrize("value", ["x" * 33])
+async def test_invalid_name_affixes_rejected(hass, entry, key, value):
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(result["flow_id"], user_input={key: value})
+    assert result["errors"] == {"base": "invalid_config"}
+
+
+@pytest.mark.parametrize("key", ["name_sync_prefix", "name_sync_suffix"])
+@pytest.mark.parametrize("value", [None, 42, "x" * 33])
+def test_validate_name_affix_types_and_lengths(key, value):
+    from custom_components.omada_guest_access.config_flow import validate_portal_settings
+
+    with pytest.raises(ValueError):
+        validate_portal_settings({key: value})

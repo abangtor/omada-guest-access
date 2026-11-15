@@ -17,6 +17,7 @@ from homeassistant.helpers.selector import (
     TextSelectorConfig,
 )
 
+from .client_names import MAX_AFFIX_LENGTH
 from .const import (
     CONF_ALLOWED_NETWORKS,
     CONF_CONTROLLER_ID,
@@ -27,6 +28,8 @@ from .const import (
     CONF_ENABLE_REVOKE,
     CONF_FORGET_ALL_RECORDS,
     CONF_NAME_SYNC_PASSWORD,
+    CONF_NAME_SYNC_PREFIX,
+    CONF_NAME_SYNC_SUFFIX,
     CONF_NAME_SYNC_USERNAME,
     CONF_PASSWORD,
     CONF_PENDING_TIMEOUT,
@@ -180,6 +183,8 @@ class OmadaGuestAccessOptionsFlow(config_entries.OptionsFlow):
             CONF_SYNC_CLIENT_NAMES,
             CONF_NAME_SYNC_USERNAME,
             CONF_NAME_SYNC_PASSWORD,
+            CONF_NAME_SYNC_PREFIX,
+            CONF_NAME_SYNC_SUFFIX,
             CONF_PORTAL_CSS,
             CONF_PORTAL_TEMPLATE,
             CONF_SHOW_REMEMBER_CHECKBOX,
@@ -225,6 +230,9 @@ def validate_portal_settings(values: dict[str, Any]) -> None:
         for key in (CONF_NAME_SYNC_USERNAME, CONF_NAME_SYNC_PASSWORD)
     ):
         raise ValueError("Controller credentials are required for name synchronization")
+    for key in (CONF_NAME_SYNC_PREFIX, CONF_NAME_SYNC_SUFFIX):
+        if not isinstance(values.get(key, ""), str) or len(values.get(key, "")) > MAX_AFFIX_LENGTH:
+            raise ValueError("Name affixes must be text of at most 32 characters")
     decision_users = values.get(CONF_DECISION_USER_IDS, [])
     if not isinstance(decision_users, list) or not all(isinstance(user_id, str) and user_id for user_id in decision_users):
         raise ValueError("Decision users must be a list of Home Assistant user IDs")
@@ -318,6 +326,10 @@ def _data_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
             vol.Optional(CONF_NAME_SYNC_PASSWORD, default=defaults.get(CONF_NAME_SYNC_PASSWORD, "")): TextSelector(
                 TextSelectorConfig(type="password")
             ),
+            **{
+                vol.Optional(key, default=defaults.get(key, "")): cv.string
+                for key in (CONF_NAME_SYNC_PREFIX, CONF_NAME_SYNC_SUFFIX)
+            },
             vol.Optional(CONF_ENABLE_REVOKE, default=defaults.get(CONF_ENABLE_REVOKE, True)): cv.boolean,
             **{
                 vol.Optional(key, default=defaults.get(key, "")): TextSelector(TextSelectorConfig(multiline=True))

@@ -19,9 +19,12 @@ from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
+from .client_names import format_client_name, sanitize_client_name
 from .const import (
     CONF_DEFAULT_DURATION,
     CONF_NAME_SYNC_PASSWORD,
+    CONF_NAME_SYNC_PREFIX,
+    CONF_NAME_SYNC_SUFFIX,
     CONF_NAME_SYNC_USERNAME,
     CONF_PASSWORD,
     CONF_PENDING_TIMEOUT,
@@ -412,7 +415,12 @@ class OmadaGuestAccessCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Best-effort, retried on polls; callers hold the lifecycle lock."""
         if self.name_client is None or item["status"] not in _ACTIVE or not item.get("portal_context"):
             return
-        name = (item.get("admin_label") or item.get("guest_name") or "").strip()
+        name = sanitize_client_name(item.get("admin_label") or "") or sanitize_client_name(
+            item.get("guest_name") or ""
+        )
+        name = format_client_name(
+            name, self.config.get(CONF_NAME_SYNC_PREFIX, ""), self.config.get(CONF_NAME_SYNC_SUFFIX, "")
+        )
         context = PortalContext(**item["portal_context"])
         key = (context.site, context.client_mac)
         if not name or self._synced_names.get(key) == name:

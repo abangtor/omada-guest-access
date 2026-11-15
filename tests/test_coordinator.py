@@ -264,3 +264,37 @@ async def test_name_sync_uses_separate_controller_credentials(hass, entry, mock_
     await instance.async_close()
     controller.async_close.assert_awaited_once()
     mock_client.async_close.assert_awaited_once()
+
+
+async def test_sync_sanitizes_falls_back_and_refreshes_affixes(coordinator, context):
+    from unittest.mock import AsyncMock
+
+    coordinator.name_client = AsyncMock()
+    coordinator.config.update(name_sync_prefix="Guest - ", name_sync_suffix=" - WiFi")
+    item = await coordinator.async_create_request("<b>José</b>", context)
+    coordinator.name_client.async_set_client_name.assert_awaited_with(context, "Guest - José - WiFi")
+    assert item["guest_name"] == "<b>José</b>"
+    result = await coordinator.async_set_guest_label(item["request_id"], "Admin\u202e")
+    coordinator.name_client.async_set_client_name.assert_awaited_with(context, "Guest - Admin - WiFi")
+    assert result["admin_label"] == "Admin\u202e"
+    await coordinator.async_set_guest_label(item["request_id"], "<b></b>")
+    coordinator.name_client.async_set_client_name.assert_awaited_with(context, "Guest - José - WiFi")
+    coordinator.config.update(name_sync_prefix="Visitor - ", name_sync_suffix="")
+    await coordinator._async_update_data()
+    coordinator.name_client.async_set_client_name.assert_awaited_with(context, "Visitor - José")
+    count = coordinator.name_client.async_set_client_name.await_count
+    await coordinator._async_update_data()
+    assert coordinator.name_client.async_set_client_name.await_count == count
+    await coordinator.async_set_guest_label(item["request_id"], "")
+    coordinator.config.update(name_sync_prefix="", name_sync_suffix="")
+    await coordinator._async_update_data()
+    coordinator.name_client.async_set_client_name.assert_awaited_with(context, "José")
+
+
+async def test_sync_skips_empty_sanitized_name(coordinator, context):
+    from unittest.mock import AsyncMock
+
+    coordinator.name_client = AsyncMock()
+    coordinator.config["name_sync_prefix"] = "Guest - "
+    await coordinator.async_create_request("<b></b>", context)
+    coordinator.name_client.async_set_client_name.assert_not_awaited()

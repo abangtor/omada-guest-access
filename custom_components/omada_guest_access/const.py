@@ -77,3 +77,6 @@ CONF_DECISION_USER_IDS: Final = "decision_user_ids"
 CONF_SYNC_CLIENT_NAMES: Final = "sync_client_names"
 CONF_NAME_SYNC_USERNAME: Final = "name_sync_username"
 CONF_NAME_SYNC_PASSWORD: Final = "name_sync_password"
+
+CONF_NAME_SYNC_PREFIX: Final = "name_sync_prefix"
+CONF_NAME_SYNC_SUFFIX: Final = "name_sync_suffix"
