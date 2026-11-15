@@ -73,3 +73,7 @@ CONF_SHOW_REMEMBER_CHECKBOX: Final = "show_remember_checkbox"
 CONF_SHOW_FORGET_BUTTON: Final = "show_forget_button"
 CONF_FORGET_ALL_RECORDS: Final = "forget_all_records"
 CONF_DECISION_USER_IDS: Final = "decision_user_ids"
+
+CONF_SYNC_CLIENT_NAMES: Final = "sync_client_names"
+CONF_NAME_SYNC_USERNAME: Final = "name_sync_username"
+CONF_NAME_SYNC_PASSWORD: Final = "name_sync_password"

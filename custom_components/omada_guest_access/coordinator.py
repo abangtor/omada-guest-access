@@ -21,10 +21,15 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_DEFAULT_DURATION,
+    CONF_NAME_SYNC_PASSWORD,
+    CONF_NAME_SYNC_USERNAME,
+    CONF_PASSWORD,
     CONF_PENDING_TIMEOUT,
     CONF_REQUIRE_TERMS,
     CONF_RETENTION_DAYS,
+    CONF_SYNC_CLIENT_NAMES,
     CONF_TERMS_TEXT,
+    CONF_USERNAME,
     DEFAULT_DURATION_HOURS,
     DEFAULT_PENDING_TIMEOUT_MINUTES,
     DEFAULT_RETENTION_DAYS,
@@ -41,7 +46,7 @@ from .const import (
     STORAGE_KEY,
     STORAGE_VERSION,
 )
-from .omada_client import OmadaApiError, OmadaAuthError, OmadaExternalPortalClient, PortalContext
+from .omada_client import OmadaApiError, OmadaAuthError, OmadaClientNameClient, OmadaExternalPortalClient, PortalContext
 
 _LOGGER = logging.getLogger(__name__)
 _ACTIVE = {"pending", "approved"}
@@ -56,6 +61,16 @@ class OmadaGuestAccessCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.requests: dict[str, dict[str, Any]] = {}
         self.config = dict(entry.data) | dict(entry.options)
         self.client = OmadaExternalPortalClient(hass, self.config)
+        self.name_client = None
+        self._synced_names: dict[tuple[str, str], str] = {}
+        if self.config.get(CONF_SYNC_CLIENT_NAMES, False):
+            self.name_client = OmadaClientNameClient(
+                hass,
+                self.config | {
+                    CONF_USERNAME: self.config.get(CONF_NAME_SYNC_USERNAME, ""),
+                    CONF_PASSWORD: self.config.get(CONF_NAME_SYNC_PASSWORD, ""),
+                },
+            )
         self.portal = None
         self.controller_available = False
         self._stopping = False
@@ -85,6 +100,8 @@ class OmadaGuestAccessCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await self.async_shutdown()
         async with self._lock:
             await self.client.async_close()
+            if self.name_client is not None:
+                await self.name_client.async_close()
 
     async def _async_save(self) -> None:
         await self._store.async_save(
@@ -106,6 +123,10 @@ class OmadaGuestAccessCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self.entry.async_start_reauth(self.hass)
         else:
             self.controller_available = True
+        async with self._lock:
+            if not self._stopping:
+                for item in self.requests.values():
+                    await self._async_sync_name(item)
         return {"requests": self.requests, "controller_available": self.controller_available}
 
     async def async_expire_requests(self, _now: datetime | None = None) -> None:
@@ -230,6 +251,7 @@ class OmadaGuestAccessCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 del self.requests[request_id]
                 raise
             self._publish()
+            await self._async_sync_name(item)
             self._event(EVENT_REQUEST_CREATED, item)
             return deepcopy(item)
 
@@ -257,6 +279,7 @@ class OmadaGuestAccessCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
             await self._async_save()
             self._publish()
+            await self._async_sync_name(item)
             self._event(EVENT_REQUEST_APPROVED, item)
             return deepcopy(item)
 
@@ -323,6 +346,7 @@ class OmadaGuestAccessCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             item.update(browser_restore_pending=False, updated_at=dt_util.utcnow())
             await self._async_save()
             self._publish()
+            await self._async_sync_name(item)
             self.hass.bus.async_fire(
                 EVENT_ACCESS_TRANSFERRED,
                 {"entry_id": self.entry.entry_id, **event_data(item), "previous_client_mac": previous_mac},
@@ -381,7 +405,25 @@ class OmadaGuestAccessCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
             await self._async_save()
             self._publish()
+            await self._async_sync_name(item)
             return deepcopy(item)
+
+    async def _async_sync_name(self, item: Mapping[str, Any]) -> None:
+        """Best-effort, retried on polls; callers hold the lifecycle lock."""
+        if self.name_client is None or item["status"] not in _ACTIVE or not item.get("portal_context"):
+            return
+        name = (item.get("admin_label") or item.get("guest_name") or "").strip()
+        context = PortalContext(**item["portal_context"])
+        key = (context.site, context.client_mac)
+        if not name or self._synced_names.get(key) == name:
+            return
+        try:
+            await self.name_client.async_set_client_name(context, name)
+        except OmadaApiError as err:
+            self._api_error(item["request_id"], err)
+            _LOGGER.warning("Omada client name synchronization failed: %s", err)
+        else:
+            self._synced_names[key] = name
 
     async def async_forget_all_records(self) -> int:
         """Delete local request history without changing Omada authorizations.
@@ -393,6 +435,7 @@ class OmadaGuestAccessCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._ensure_running()
             count = len(self.requests)
             self.requests.clear()
+            self._synced_names.clear()
             await self._async_save()
             self._publish()
             return count

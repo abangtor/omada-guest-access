@@ -32,7 +32,14 @@
           "portal_submit_error_message": "Request submission error message (blank hides text)",
           "portal_denied_message": "Access denied message (replaces private denial reason; blank hides text)",
           "portal_expired_message": "Request expired message (blank hides text)",
-          "portal_revoked_message": "Access cancelled message (blank hides text)"
+          "portal_revoked_message": "Access cancelled message (blank hides text)",
+          "sync_client_names": "Synchronize guest names to Omada",
+          "name_sync_username": "Controller username for name synchronization",
+          "name_sync_password": "Controller password for name synchronization"
+        },
+        "data_description": {
+          "sync_client_names": "Use the admin label, or the guest-submitted name when no label is set. Existing active guests are synchronized too. Disabling stops future updates without restoring old names.",
+          "name_sync_username": "A local controller account with client-management permission for this site, not a Hotspot Operator account. Separate cookies keep portal authorization unaffected."
         }
       },
       "reauth_confirm": {
@@ -66,7 +73,14 @@
           "portal_submit_error_message": "Request submission error message (blank hides text)",
           "portal_denied_message": "Access denied message (replaces private denial reason; blank hides text)",
           "portal_expired_message": "Request expired message (blank hides text)",
-          "portal_revoked_message": "Access cancelled message (blank hides text)"
+          "portal_revoked_message": "Access cancelled message (blank hides text)",
+          "sync_client_names": "Synchronize guest names to Omada",
+          "name_sync_username": "Controller username for name synchronization",
+          "name_sync_password": "Controller password for name synchronization"
+        },
+        "data_description": {
+          "sync_client_names": "Use the admin label, or the guest-submitted name when no label is set. Existing active guests are synchronized too. Disabling stops future updates without restoring old names.",
+          "name_sync_username": "A local controller account with client-management permission for this site, not a Hotspot Operator account. Separate cookies keep portal authorization unaffected."
         }
       },
       "reconfigure": {
@@ -100,7 +114,14 @@
           "portal_submit_error_message": "Request submission error message (blank hides text)",
           "portal_denied_message": "Access denied message (replaces private denial reason; blank hides text)",
           "portal_expired_message": "Request expired message (blank hides text)",
-          "portal_revoked_message": "Access cancelled message (blank hides text)"
+          "portal_revoked_message": "Access cancelled message (blank hides text)",
+          "sync_client_names": "Synchronize guest names to Omada",
+          "name_sync_username": "Controller username for name synchronization",
+          "name_sync_password": "Controller password for name synchronization"
+        },
+        "data_description": {
+          "sync_client_names": "Use the admin label, or the guest-submitted name when no label is set. Existing active guests are synchronized too. Disabling stops future updates without restoring old names.",
+          "name_sync_username": "A local controller account with client-management permission for this site, not a Hotspot Operator account. Separate cookies keep portal authorization unaffected."
         }
       }
     },
@@ -148,7 +169,14 @@
           "portal_submit_error_message": "Request submission error message (blank hides text)",
           "portal_denied_message": "Access denied message (replaces private denial reason; blank hides text)",
           "portal_expired_message": "Request expired message (blank hides text)",
-          "portal_revoked_message": "Access cancelled message (blank hides text)"
+          "portal_revoked_message": "Access cancelled message (blank hides text)",
+          "sync_client_names": "Synchronize guest names to Omada",
+          "name_sync_username": "Controller username for name synchronization",
+          "name_sync_password": "Controller password for name synchronization"
+        },
+        "data_description": {
+          "sync_client_names": "Use the admin label, or the guest-submitted name when no label is set. Existing active guests are synchronized too. Disabling stops future updates without restoring old names.",
+          "name_sync_username": "A local controller account with client-management permission for this site, not a Hotspot Operator account. Separate cookies keep portal authorization unaffected."
         }
       }
     },

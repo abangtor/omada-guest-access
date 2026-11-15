@@ -392,3 +392,32 @@ to load the new editor. Storage-managed card resources automatically change to
 ## Upgrade notes for 1.5.0
 
 Persistent browser approvals now survive MAC rotation. New requests enroll a browser automatically; existing approvals require a new request/approval once. Browser-cookie retention and Hotspot Manager deauthentication support are required for seamless MAC transfers. Returning guests never receive a fresh full-duration grant.
+
+
+## Optional Omada client-name synchronization (1.5.1)
+
+In **Settings → Devices & services → Omada Guest Access → Configure**, enable
+**Synchronize guest names to Omada** and enter the separate **controller username**
+and **controller password for name synchronization**. This must be a local Omada
+controller account with client-management permission for the configured site;
+Hotspot Operator credentials alone cannot rename controller clients.
+
+- Disabled by default. This is an integration option, not a per-card setting.
+- Uses the admin/user label when provided; otherwise the guest-submitted name.
+- Synchronizes on guest submission, approval, admin-label edits (including clearing
+  a label), and remembered-device MAC changes. Existing pending/approved guests
+  are synchronized on the next coordinator refresh after enabling or restarting.
+- Successful names are cached to avoid repeated writes; failed updates are retried
+  on the 30-second coordinator refresh and reported in logs and `omada_guest_access_omada_api_error` events.
+  A failed rename never prevents approval or saving a local label.
+- Updates the Omada display name only, including an existing controller name;
+  does not change DHCP hostnames, DNS, authorization, or other client settings.
+  Disabling stops updates; it does not restore previous controller names.
+- Uses the controller web API (`POST /login`, `GET /sites/{site}`, then name-only
+  `PATCH /sites/{siteId}/clients/{mac}`), with a session isolated from Hotspot
+  Manager. This is not the documented External Portal API; controller versions
+  and permissions may differ. Protocol reference: the
+  [client-name updater](https://github.com/abangtor/omada_client_name_updater/blob/main/update-omada-clients-dns-lookup.sh).
+
+Update/redownload the integration and restart Home Assistant to install this feature.
+Live controller rename behavior still needs verification on your installation.

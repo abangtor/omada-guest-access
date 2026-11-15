@@ -26,6 +26,8 @@ from .const import (
     CONF_DURATION_OPTIONS,
     CONF_ENABLE_REVOKE,
     CONF_FORGET_ALL_RECORDS,
+    CONF_NAME_SYNC_PASSWORD,
+    CONF_NAME_SYNC_USERNAME,
     CONF_PASSWORD,
     CONF_PENDING_TIMEOUT,
     CONF_PORTAL_ACCENT,
@@ -40,6 +42,7 @@ from .const import (
     CONF_SHOW_FORGET_BUTTON,
     CONF_SHOW_REMEMBER_CHECKBOX,
     CONF_SITE,
+    CONF_SYNC_CLIENT_NAMES,
     CONF_TERMS_TEXT,
     CONF_TRUSTED_PROXIES,
     CONF_USERNAME,
@@ -174,6 +177,9 @@ class OmadaGuestAccessOptionsFlow(config_entries.OptionsFlow):
             *PORTAL_MESSAGES,
             CONF_DURATION_OPTIONS,
             CONF_ENABLE_REVOKE,
+            CONF_SYNC_CLIENT_NAMES,
+            CONF_NAME_SYNC_USERNAME,
+            CONF_NAME_SYNC_PASSWORD,
             CONF_PORTAL_CSS,
             CONF_PORTAL_TEMPLATE,
             CONF_SHOW_REMEMBER_CHECKBOX,
@@ -212,6 +218,13 @@ def validate_portal_settings(values: dict[str, Any]) -> None:
     parse_duration_options(values.get(CONF_DURATION_OPTIONS, DEFAULT_DURATION_OPTIONS))
     if not isinstance(values.get(CONF_ENABLE_REVOKE, True), bool):
         raise ValueError("Enable revoke must be a boolean")
+    if not isinstance(values.get(CONF_SYNC_CLIENT_NAMES, False), bool):
+        raise ValueError("Name synchronization must be a boolean")
+    if values.get(CONF_SYNC_CLIENT_NAMES) and not all(
+        isinstance(values.get(key), str) and values[key].strip()
+        for key in (CONF_NAME_SYNC_USERNAME, CONF_NAME_SYNC_PASSWORD)
+    ):
+        raise ValueError("Controller credentials are required for name synchronization")
     decision_users = values.get(CONF_DECISION_USER_IDS, [])
     if not isinstance(decision_users, list) or not all(isinstance(user_id, str) and user_id for user_id in decision_users):
         raise ValueError("Decision users must be a list of Home Assistant user IDs")
@@ -300,6 +313,11 @@ def _data_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
                 vol.Optional(key, default=defaults.get(key, default)): TextSelector(TextSelectorConfig(multiline=True))
                 for key, default in PORTAL_MESSAGES.items()
             },
+            vol.Optional(CONF_SYNC_CLIENT_NAMES, default=defaults.get(CONF_SYNC_CLIENT_NAMES, False)): cv.boolean,
+            vol.Optional(CONF_NAME_SYNC_USERNAME, default=defaults.get(CONF_NAME_SYNC_USERNAME, "")): cv.string,
+            vol.Optional(CONF_NAME_SYNC_PASSWORD, default=defaults.get(CONF_NAME_SYNC_PASSWORD, "")): TextSelector(
+                TextSelectorConfig(type="password")
+            ),
             vol.Optional(CONF_ENABLE_REVOKE, default=defaults.get(CONF_ENABLE_REVOKE, True)): cv.boolean,
             **{
                 vol.Optional(key, default=defaults.get(key, "")): TextSelector(TextSelectorConfig(multiline=True))

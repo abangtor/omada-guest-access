@@ -265,7 +265,7 @@ class OmadaExternalPortalClient:
             headers["Csrf-Token"] = self._csrf_token
         url = f"{self._base_url}/{self._controller_id}/api/v2{path}"
         try:
-            request = self._session.get if method == "GET" else self._session.post
+            request = {"GET": self._session.get, "POST": self._session.post, "PATCH": self._session.patch}[method]
             kwargs = {"headers": headers, "allow_redirects": False}
             if payload is not None:
                 kwargs["json"] = payload
@@ -320,7 +320,7 @@ class OmadaExternalPortalClient:
             # Omada uses -1005 for an expired/missing session. Do not expose
             # arbitrary controller response text (which can contain secrets).
             if not csrf or code == -1005:
-                raise OmadaAuthError(f"Omada rejected the Hotspot Operator login/session (error code {code})")
+                raise OmadaAuthError(f"Omada rejected the login/session (error code {code})")
             raise OmadaApiError(f"Omada rejected the API operation (error code {code})")
         return result
 
@@ -341,3 +341,51 @@ def _authorization_payload(context: PortalContext, duration_hours: int) -> dict[
     else:
         payload.update(gatewayMac=context.gateway_mac or "", vid=context.vlan_id or "")
     return payload
+
+
+class OmadaClientNameClient(OmadaExternalPortalClient):
+    """Controller-only session; never share cookies with the Hotspot Operator.
+
+    Uses the controller web API PATCH clients/{mac}, with a name-only payload.
+    """
+
+    async def _async_login(self) -> None:
+        self._csrf_token = None
+        self._session.cookie_jar.clear()
+        response = await self._async_raw_request(
+            "/login", {"username": self._username, "password": self._password}, csrf=False
+        )
+        result = response.get("result")
+        token = result.get("token") if isinstance(result, dict) else None
+        if not isinstance(token, str) or not token:
+            raise OmadaApiError("Controller login did not return a CSRF token")
+        self._csrf_token = token
+
+    async def async_set_client_name(self, context: PortalContext, name: str) -> None:
+        """Resolve the portal site, then change only the client's display name."""
+        if not isinstance(name, str) or not 1 <= len(name.strip()) <= 120:
+            raise ValueError("A client name of up to 120 characters is required")
+        async with self._lock:
+            for attempt in range(2):
+                if not self._csrf_token:
+                    await self._async_login()
+                try:
+                    site_response = await self._async_raw_request(
+                        f"/sites/{quote(context.site, safe='')}", None, csrf=True, method="GET"
+                    )
+                    site = site_response.get("result")
+                    site_id = site.get("id") if isinstance(site, dict) else None
+                    if not isinstance(site_id, str) or not site_id:
+                        raise OmadaApiError("Controller did not return a site ID for name synchronization")
+                    mac = context.client_mac.upper().replace(":", "-")
+                    if not re.fullmatch(r"(?:[0-9A-F]{2}-){5}[0-9A-F]{2}", mac):
+                        raise ValueError("Invalid client MAC address")
+                    await self._async_raw_request(
+                        f"/sites/{quote(site_id, safe='')}/clients/{mac}",
+                        {"name": name.strip()}, csrf=True, method="PATCH"
+                    )
+                    return
+                except OmadaAuthError:
+                    self._csrf_token = None
+                    if attempt:
+                        raise

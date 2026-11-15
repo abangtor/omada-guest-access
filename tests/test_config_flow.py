@@ -298,6 +298,8 @@ async def test_extended_options_are_serializable(entry, flow_http):
     fields = {field["name"]: field for field in (await response.json())["data_schema"]}
     assert fields["portal_template"]["selector"]["text"]["multiline"]
     assert "duration_options" in fields
+    assert "sync_client_names" in fields
+    assert fields["name_sync_password"]["selector"]["text"]["type"] == "password"
     assert "enable_revoke" in fields
     assert "show_remember_checkbox" in fields
     assert "show_forget_button" in fields
@@ -323,3 +325,15 @@ def test_invalid_guest_messages_rejected(value):
     for key in PORTAL_MESSAGES:
         with pytest.raises(ValueError):
             validate_portal_settings({key: value})
+
+
+async def test_sync_options_require_credentials_and_persist(hass, entry):
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], user_input={"sync_client_names": True}
+    )
+    assert result["errors"] == {"base": "invalid_config"}
+    settings = {"sync_client_names": True, "name_sync_username": "controller-user", "name_sync_password": "secret"}
+    result = await hass.config_entries.options.async_configure(result["flow_id"], user_input=settings)
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert all(entry.options[key] == value for key, value in settings.items())

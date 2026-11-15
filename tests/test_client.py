@@ -297,3 +297,38 @@ async def test_remaining_duration_recomputed_after_auth_retry(
         assert len(authorizations) == 2
     finally:
         await client.async_close()
+
+
+async def test_controller_name_sync_patch_retry(hass, config, context, aiohttp_server, socket_enabled):
+    from custom_components.omada_guest_access.omada_client import OmadaClientNameClient
+
+    logins, updates = [], []
+
+    async def login(request):
+        logins.append(await request.json())
+        response = web.json_response({"errorCode": 0, "result": {"token": str(len(logins))}})
+        response.set_cookie("session", str(len(logins)))
+        return response
+
+    async def site(request):
+        assert request.headers["Csrf-Token"] == str(len(logins))
+        return web.json_response({"errorCode": 0, "result": {"id": "site-id"}})
+
+    async def update(request):
+        updates.append(await request.json())
+        assert request.cookies["session"] == str(len(logins))
+        return web.json_response({"errorCode": -1005 if len(updates) == 1 else 0})
+
+    app = web.Application()
+    app.router.add_post("/controller/api/v2/login", login)
+    app.router.add_get("/controller/api/v2/sites/Default", site)
+    app.router.add_patch("/controller/api/v2/sites/site-id/clients/AA-BB-CC-DD-EE-FF", update)
+    server = await aiohttp_server(app)
+    client = OmadaClientNameClient(hass, config | {"controller_url": str(server.make_url("/"))})
+    try:
+        await client.async_set_client_name(context, 'Name "with quotes"')
+        assert len(logins) == 2
+        assert logins[0] == {"username": config["username"], "password": config["password"]}
+        assert updates == [{"name": 'Name "with quotes"'}] * 2
+    finally:
+        await client.async_close()

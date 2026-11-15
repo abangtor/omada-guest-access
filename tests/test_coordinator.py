@@ -2,6 +2,7 @@
 
 import asyncio
 from datetime import timedelta
+from hashlib import sha256
 from unittest.mock import AsyncMock
 
 import pytest
@@ -199,3 +200,67 @@ async def test_optional_terms_do_not_record_fabricated_consent(coordinator, cont
     )
     assert item["terms_accepted_at"] is None
     assert item["terms_text"] is None
+
+
+async def test_name_sync_precedence_updates_and_disable(coordinator, context):
+    from unittest.mock import AsyncMock
+
+    from custom_components.omada_guest_access.omada_client import OmadaApiError
+
+    sync = AsyncMock()
+    coordinator.name_client = sync
+    item = await coordinator.async_create_request("Guest name", context)
+    sync.async_set_client_name.assert_awaited_once_with(context, "Guest name")
+    await coordinator.async_set_guest_label(item["request_id"], "Admin name")
+    sync.async_set_client_name.assert_awaited_with(context, "Admin name")
+    await coordinator.async_set_guest_label(item["request_id"], "")
+    sync.async_set_client_name.assert_awaited_with(context, "Guest name")
+    count = sync.async_set_client_name.await_count
+    await coordinator._async_update_data()
+    assert sync.async_set_client_name.await_count == count
+    sync.async_set_client_name.side_effect = OmadaApiError("Permission denied")
+    result = await coordinator.async_set_guest_label(item["request_id"], "Retry name")
+    assert result["admin_label"] == "Retry name"
+    sync.async_set_client_name.side_effect = None
+    await coordinator._async_update_data()
+    sync.async_set_client_name.assert_awaited_with(context, "Retry name")
+    coordinator.name_client = None
+    count = sync.async_set_client_name.await_count
+    await coordinator.async_set_guest_label(item["request_id"], "Local only")
+    assert sync.async_set_client_name.await_count == count
+
+
+async def test_name_sync_existing_records_and_mac_transfer(coordinator, context):
+    from dataclasses import replace
+    from unittest.mock import AsyncMock
+
+    item = await coordinator.async_create_request("Guest", context, browser_key_hash=sha256(("b" * 64).encode()).hexdigest())
+    await coordinator.async_approve_request(item["request_id"])
+    coordinator.name_client = AsyncMock()
+    await coordinator._async_update_data()
+    coordinator.name_client.async_set_client_name.assert_awaited_once_with(context, "Guest")
+    changed = replace(context, client_mac="AA:BB:CC:DD:EE:00")
+    await coordinator.async_resume_browser("b" * 64, changed)
+    coordinator.name_client.async_set_client_name.assert_awaited_with(changed, "Guest")
+
+
+async def test_name_sync_uses_separate_controller_credentials(hass, entry, mock_client):
+    from unittest.mock import patch
+
+    hass.config_entries.async_update_entry(entry, options={
+        "sync_client_names": True,
+        "name_sync_username": "controller-user",
+        "name_sync_password": "controller-password",
+    })
+    controller = AsyncMock()
+    with patch(
+        "custom_components.omada_guest_access.coordinator.OmadaClientNameClient", return_value=controller
+    ) as factory:
+        instance = OmadaGuestAccessCoordinator(hass, entry)
+    config = factory.call_args.args[1]
+    assert config["username"] == "controller-user"
+    assert config["password"] == "controller-password"
+    assert entry.data["username"] == "operator"
+    await instance.async_close()
+    controller.async_close.assert_awaited_once()
+    mock_client.async_close.assert_awaited_once()
